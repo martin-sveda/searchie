@@ -287,6 +287,7 @@ CREATE INDEX ix_sessions_ws  ON sessions(workspace_id, last_at);
 CREATE INDEX ix_turns_session ON turns(session_key, idx);
 CREATE INDEX ix_turn_tools   ON turn_tools(turn_id);
 CREATE INDEX ix_files_session ON files(session_key);
+CREATE INDEX ix_files_ws     ON files(workspace_id);
 ```
 
 Workspace ids are `<source>:<storage hash>` or `<source>:empty-window`, so Stable and Insiders never collide. The session title is stored in every turn's `title` column, so a query can combine a title term with a term from any turn.

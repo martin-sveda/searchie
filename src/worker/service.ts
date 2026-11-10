@@ -45,7 +45,8 @@ export class WorkerService {
   private open(): void {
     this.closeDb();
     const paths = this.requirePaths();
-    if (!this.writer && !fs.existsSync(paths.live)) return;
+    // Only an existing index is opened; a writer creates it with a cold build (published by rename).
+    if (!fs.existsSync(paths.live)) return;
     try {
       this.db = new IndexDb(openNodeSqliteStore(paths.live, { readOnly: !this.writer }));
       this.engine = new QueryEngine(this.db.store);

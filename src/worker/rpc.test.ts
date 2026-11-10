@@ -55,7 +55,7 @@ describe('worker RPC (real worker_thread)', () => {
 
   it('initialises, cold-builds and answers queries', async () => {
     const dir = tempDir();
-    expect(await client.call('init', { dir, settings, writer: true })).toMatchObject({ role: 'writer', hasIndex: true });
+    expect(await client.call('init', { dir, settings, writer: true })).toMatchObject({ role: 'writer', hasIndex: false });
     const r = await client.call('sync', {});
     expect(r.rebuilt).toBe('missing');
     expect(r.stats?.sessionsWritten).toBe(3);

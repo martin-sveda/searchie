@@ -435,7 +435,7 @@ Contains two views:
   - label: session title (with `$(comment-discussion)`; `$(terminal)` for CLI)
   - description: workspace · relative date · model
   - detail: best snippet (plain text, matched terms not highlightable in Quick Pick → shown in `«»`)
-- R7.9 – `matchOnDescription/Detail = false` (ranking comes from the index, not Quick Pick filtering).
+- R7.9 – `matchOnDescription/Detail = false` and `alwaysShow = true` (ranking comes from the index, not Quick Pick filtering). Known limit of the stable API: while text is typed, VS Code moves sessions whose *title* fuzzy-matches it to the top (label sorting can't be turned off without proposed API); the remaining order is the index ranking. Accepted, because titles carry the highest weight anyway.
 - R7.10 – Item buttons: *Preview*, *Open Workspace in New Window*. Enter = *Open* (§8).
 - R7.11 – Footer item "Open in Search Panel…" carries the current query to §7.3 (Phase 2).
 - R7.12 – Pre-fill: selected text in the active editor, else last query.
@@ -565,6 +565,7 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 - R10.8 – Paths from session data opened only via `vscode.Uri.file` after `fs.stat` existence check; never executed.
 - R10.9 – Workspace trust: extension works in untrusted workspaces (it reads only user-level storage) – declare `capabilities.untrustedWorkspaces.supported = true`.
 - R10.10 – Session content may contain personal data; README states that the index contains a copy of chat content and how to delete it.
+- R10.11 – `extensionKind: ["ui", "workspace"]`: in remote windows Searchie runs on the local machine, where VS Code stores chat sessions.
 
 ---
 
@@ -587,6 +588,8 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 ## 12. Settings and commands
 
 ### 12.1 Settings
+
+Settings that shape the index (`sources.*`, `additionalSessionRoots`, `excludeWorkspaces`, `index.*`, `noisePatterns`) are application-scoped (user settings only), because one index is shared by all windows.
 
 | Key | Type | Default | Description |
 |---|---|---|---|
@@ -629,7 +632,7 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 | `searchie.deleteIndex` | Searchie: Delete Index | – |
 | `searchie.showLog` | Searchie: Show Log | – |
 
-Keybinding conflicts to be verified during implementation.
+Keybinding conflicts verified in Phase 1: none in VS Code 1.145.2 core and built-in extensions (smoke test reads the default keybindings) and none in the owner's installed extensions.
 
 ---
 

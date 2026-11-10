@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { EMPTY_WINDOW, type SourceId, workspaceKey } from './model';
+import { EMPTY_WINDOW, type SourceId, workspaceKey } from './ids';
 import { fileUriToPath, matchesAnyGlob } from './text';
 
 /** Source and workspace discovery for VS Code Stable / Insiders (SPEC §3). */

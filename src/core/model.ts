@@ -1,16 +1,11 @@
 import { z } from 'zod';
+import { SOURCE_IDS } from './ids';
+
+export { EMPTY_WINDOW, SOURCE_IDS, SOURCE_LABELS, type SourceId, sessionKey, workspaceKey } from './ids';
 
 /** Normalized session model (SPEC §4.4). Shared by parsers, the indexer, the worker RPC and the UI. */
 
-export const SOURCE_IDS = ['vscode', 'vscode-insiders', 'copilot-cli'] as const;
 export const SourceIdSchema = z.enum(SOURCE_IDS);
-export type SourceId = z.infer<typeof SourceIdSchema>;
-
-export const SOURCE_LABELS: Record<SourceId, string> = {
-  vscode: 'VS Code',
-  'vscode-insiders': 'Insiders',
-  'copilot-cli': 'Copilot CLI',
-};
 
 export const ToolCallSchema = z.object({ tool: z.string(), args: z.string() });
 export type ToolCall = z.infer<typeof ToolCallSchema>;
@@ -104,7 +99,3 @@ export const RawVsCodeSessionSchema = z.looseObject({
   lastMessageDate: z.number().optional().catch(undefined),
 });
 export type RawVsCodeSession = z.infer<typeof RawVsCodeSessionSchema>;
-
-export const sessionKey = (source: SourceId, sessionId: string): string => `${source}:${sessionId}`;
-export const workspaceKey = (source: SourceId, idPart: string): string => `${source}:${idPart}`;
-export const EMPTY_WINDOW = 'empty-window';

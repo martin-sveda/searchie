@@ -1,0 +1,14 @@
+{
+  "name": "searchie-spike-s2-index-engine",
+  "private": true,
+  "type": "module",
+  "description": "Throwaway S2 spike: FTS5 engine benchmark (see ../S2-index-engine.md)",
+  "scripts": {
+    "probe": "../node.sh probe-fts5.mjs",
+    "bench": "./run-all.sh > out/report.md"
+  },
+  "dependencies": {
+    "@sqlite.org/sqlite-wasm": "3.54.1-build1",
+    "sql.js": "1.15.2"
+  }
+}

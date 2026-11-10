@@ -1,0 +1,388 @@
+{
+  "name": "searchie",
+  "displayName": "Searchie",
+  "description": "Full-text search across your local GitHub Copilot chat sessions. Read-only, local only, zero telemetry.",
+  "version": "0.1.0",
+  "publisher": "searchie",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/martin-sveda/searchie.git"
+  },
+  "engines": {
+    "vscode": "^1.106.0",
+    "node": ">=22.13.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "copilot",
+    "chat",
+    "search",
+    "history",
+    "sessions"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "ui",
+    "workspace"
+  ],
+  "activationEvents": [
+    "onStartupFinished",
+    "onView:searchie.sessions",
+    "onCommand:searchie.search"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": true
+  },
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "searchie",
+          "title": "Searchie",
+          "icon": "media/searchie.svg"
+        }
+      ]
+    },
+    "views": {
+      "searchie": [
+        {
+          "id": "searchie.sessions",
+          "name": "Sessions",
+          "icon": "media/searchie.svg",
+          "contextualTitle": "Searchie"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "searchie.sessions",
+        "contents": "No Copilot chat sessions found yet.\n[Refresh Index](command:searchie.refresh)\n[Show Log](command:searchie.showLog)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "searchie.search",
+        "title": "Search Sessions",
+        "category": "Searchie",
+        "icon": "$(search)"
+      },
+      {
+        "command": "searchie.searchInWorkspace",
+        "title": "Search Sessions in Current Workspace",
+        "category": "Searchie"
+      },
+      {
+        "command": "searchie.searchInSession",
+        "title": "Search in this Session",
+        "category": "Searchie"
+      },
+      {
+        "command": "searchie.filterSessions",
+        "title": "Filter Sessions…",
+        "category": "Searchie",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "searchie.openInChat",
+        "title": "Open Session in Chat",
+        "category": "Searchie",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "searchie.preview",
+        "title": "Preview Session",
+        "category": "Searchie",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "searchie.openWorkspaceInNewWindow",
+        "title": "Open Session Workspace in New Window",
+        "category": "Searchie",
+        "icon": "$(empty-window)"
+      },
+      {
+        "command": "searchie.copySessionId",
+        "title": "Copy Session ID",
+        "category": "Searchie"
+      },
+      {
+        "command": "searchie.revealSessionFile",
+        "title": "Reveal Session File",
+        "category": "Searchie"
+      },
+      {
+        "command": "searchie.refresh",
+        "title": "Refresh Index",
+        "category": "Searchie",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "searchie.rebuildIndex",
+        "title": "Rebuild Index",
+        "category": "Searchie"
+      },
+      {
+        "command": "searchie.deleteIndex",
+        "title": "Delete Index",
+        "category": "Searchie"
+      },
+      {
+        "command": "searchie.showLog",
+        "title": "Show Log",
+        "category": "Searchie"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "searchie.search",
+          "when": "view == searchie.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "searchie.filterSessions",
+          "when": "view == searchie.sessions",
+          "group": "navigation@2"
+        },
+        {
+          "command": "searchie.refresh",
+          "when": "view == searchie.sessions",
+          "group": "navigation@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "searchie.openInChat",
+          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "group": "inline@1"
+        },
+        {
+          "command": "searchie.preview",
+          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "group": "inline@2"
+        },
+        {
+          "command": "searchie.openInChat",
+          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "group": "1_open@1"
+        },
+        {
+          "command": "searchie.preview",
+          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "group": "1_open@2"
+        },
+        {
+          "command": "searchie.openWorkspaceInNewWindow",
+          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "group": "1_open@3"
+        },
+        {
+          "command": "searchie.copySessionId",
+          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "group": "2_copy@1"
+        },
+        {
+          "command": "searchie.revealSessionFile",
+          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "group": "2_copy@2"
+        },
+        {
+          "command": "searchie.searchInSession",
+          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "group": "3_search@1"
+        },
+        {
+          "command": "searchie.searchInWorkspace",
+          "when": "view == searchie.sessions && viewItem =~ /^(session|workspace)/",
+          "group": "3_search@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "searchie.searchInSession",
+          "when": "false"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "searchie.search",
+        "key": "ctrl+alt+shift+f",
+        "mac": "cmd+alt+shift+f"
+      }
+    ],
+    "configuration": {
+      "title": "Searchie",
+      "properties": {
+        "searchie.sources.vscode": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Index chat sessions of VS Code Stable."
+        },
+        "searchie.sources.vscodeInsiders": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Index chat sessions of VS Code Insiders."
+        },
+        "searchie.sources.emptyWindow": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "description": "Index chat sessions of empty windows (no folder open)."
+        },
+        "searchie.additionalSessionRoots": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "application",
+          "markdownDescription": "Extra VS Code `User/` directories to index (WSL, dev containers, remote homes). A path containing `insiders` is treated as VS Code Insiders."
+        },
+        "searchie.excludeWorkspaces": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "application",
+          "markdownDescription": "Glob patterns matched against the workspace folder path (e.g. `**/scratch/**`). Matching workspaces are not indexed."
+        },
+        "searchie.index.includeThinking": {
+          "type": "boolean",
+          "default": false,
+          "scope": "application",
+          "description": "Index model thinking text (searchable, never shown in snippets). Changing it rebuilds the index."
+        },
+        "searchie.index.maxTurnTextKB": {
+          "type": "number",
+          "default": 64,
+          "minimum": 4,
+          "maximum": 1024,
+          "scope": "application",
+          "description": "Maximum indexed text per field per turn, in KB. Longer text is truncated. Changing it rebuilds the index."
+        },
+        "searchie.index.pollIntervalMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "scope": "application",
+          "description": "Fallback poll interval for changed sessions, in minutes. 0 turns polling off."
+        },
+        "searchie.search.defaultScope": {
+          "type": "string",
+          "enum": [
+            "all",
+            "currentWorkspace"
+          ],
+          "enumDescriptions": [
+            "Search sessions of all workspaces.",
+            "Search sessions of the current workspace only."
+          ],
+          "default": "all",
+          "description": "Default scope of Searchie: Search Sessions."
+        },
+        "searchie.search.recencyBoost": {
+          "type": "number",
+          "default": 0.2,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "Boost for recent turns in ranking (β in SPEC §6.3). 0 turns it off."
+        },
+        "searchie.search.maxResults": {
+          "type": "number",
+          "default": 50,
+          "minimum": 10,
+          "maximum": 500,
+          "description": "Sessions per result page."
+        },
+        "searchie.open.otherWorkspaceDefault": {
+          "type": "string",
+          "enum": [
+            "ask",
+            "preview",
+            "newWindow"
+          ],
+          "enumDescriptions": [
+            "Ask whether to preview the session or open its workspace in a new window.",
+            "Always open a read-only preview.",
+            "Always open the session's workspace in a new window."
+          ],
+          "default": "ask",
+          "description": "What to do when opening a session that belongs to another workspace."
+        },
+        "searchie.tree.groupBy": {
+          "type": "string",
+          "enum": [
+            "workspaceDate",
+            "dateWorkspace",
+            "flat"
+          ],
+          "enumDescriptions": [
+            "Workspace, then date.",
+            "Date, then workspace.",
+            "A flat list of sessions."
+          ],
+          "default": "workspaceDate",
+          "description": "Grouping of the Sessions view."
+        },
+        "searchie.redactSecrets": {
+          "type": "boolean",
+          "default": true,
+          "description": "Redact secrets (tokens, keys, passwords) in snippets and previews."
+        },
+        "searchie.noisePatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "application",
+          "markdownDescription": "Extra noise-prompt patterns: case-insensitive regular expressions matched against the whole trimmed prompt (e.g. `pokračuj`). Noise prompts rank lower and never become titles."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build -- --production",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit && eslint src",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "test:smoke": "npm run build && node dist/test/smoke/run.js",
+    "bench": "npm run build && node --disable-warning=ExperimentalWarning dist/bench.js",
+    "package": "vsce package --no-dependencies --out dist-vsix/"
+  },
+  "dependencies": {
+    "htm": "3.1.1",
+    "markdown-it": "15.0.3",
+    "preact": "10.29.8",
+    "zod": "4.6.7"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/markdown-it": "14.2.0",
+    "@types/node": "22.20.5",
+    "@types/vscode": "1.106.0",
+    "@vitest/coverage-v8": "5.1.0",
+    "@vscode/test-electron": "3.1.0",
+    "@vscode/vsce": "4.1.0",
+    "esbuild": "0.28.2",
+    "eslint": "10.14.0",
+    "eslint-plugin-no-unsanitized": "4.1.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  }
+}

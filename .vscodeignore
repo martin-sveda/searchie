@@ -1,0 +1,11 @@
+**
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!media/**
+!dist/extension.js
+!dist/worker.js
+!dist/webview/**
+dist/**/*.map

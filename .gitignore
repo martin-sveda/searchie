@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-vsix/
+coverage/
+.vscode-test/
+*.vsix
+*.sqlite
+*.sqlite-*

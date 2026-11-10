@@ -149,7 +149,7 @@ The resumed session runs in its own working directory: the reference describes "
 
 - **Format churn.** All local data comes from pre-release builds (1.0.95–1.0.103), and the CLI ships new event types frequently (over 150 in the schema). Mitigation: lenient zod, skip unknown types, and count them in diagnostics (R4.4).
 - **No local data for `abort`, `session.mode_changed`, `plan`/`autopilot` modes, or `steering`/`queued` delivery.** Their mapping is based on the public schema only; fixtures cover them synthetically.
-- **The `vscode-agent-host` origin** means VS Code may be able to open these sessions in its own chat UI. This is followed up in S1.
+- **The `vscode-agent-host` origin.** Followed up in S1: `vscode.open` on `copilotcli:/<sessionId>` opens a CLI session with its history in VS Code 1.145.2, while `agent-host-copilotcli:/<id>` fails. This could extend R8.5 beyond Preview-only (owner decision).
 
 ## Reproduce
 

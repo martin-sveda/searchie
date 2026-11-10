@@ -5,8 +5,8 @@
 | Repository | `searchie` |
 | Display name | **Searchie** |
 | Type | VS Code extension |
-| Status | Draft v0.1 – for review |
-| Date | 2026-11-08 |
+| Status | Draft v0.2 – Phase 0 spike outcomes incorporated, for review |
+| Date | 2026-11-10 |
 
 ---
 
@@ -145,8 +145,32 @@ Observed request fields: `requestId`, `timestamp`, `message`, `response[]`, `res
 
 ### 4.3 Copilot CLI
 
-- R4.11 – `events.jsonl` is mapped to the same model using Searchie prototype `parser-vscode-cli.ts` as reference; workspace from `workspace.yaml` (`cwd` / repository).
-- R4.12 – Exact CLI event mapping is confirmed in spike S3 (§14).
+- R4.11 – `events.jsonl` is mapped to the same model using Searchie prototype `parser-vscode-cli.ts` as reference; workspace from `workspace.yaml` (`git_root` → `cwd`, label `repository`).
+- R4.12 – ✅ Resolved by spike S3 ([spikes/S3-copilot-cli.md](spikes/S3-copilot-cli.md)), verified on CLI 1.0.95–1.0.103 and the public `github/copilot-sdk` session-events schema. Mapping:
+
+A turn starts at a **root** `user.message`, i.e. one without a top-level `agentId`. All events up to the next root `user.message` belong to that turn. Events with `agentId` come from sub-agents: they never start a turn and never contribute response text.
+
+| Model field | CLI source |
+|---|---|
+| `SessionMeta.id` | `session.start.data.sessionId` → else directory name |
+| `workspaceId` / `workspaceUri` | `workspace.yaml` `git_root` → else `cwd` (`file://` URI); `workspaceName` = `repository` → else folder basename |
+| `title` | `workspace.yaml` `name` → else first meaningful prompt |
+| `createdAt` / `lastActivityAt` | `session.start.data.startTime` / last event `timestamp` (fallback `workspace.yaml` `created_at` / `updated_at`) |
+| `Turn.timestamp` | root `user.message.timestamp` |
+| `Turn.prompt` | `user.message.data.content` (not `transformedContent`) |
+| `Turn.response` | concatenated `assistant.message.data.content` without `agentId` / `data.parentToolCallId` |
+| `Turn.thinking` | `assistant.message.data.reasoningText` |
+| `Turn.toolCalls` | `tool.execution_start.data.toolName` (+ `mcpServerName`) + compact `data.arguments` (`path`, `paths`, `command`, `pattern`, `query`, `url`, `skill`); never `tool.execution_complete.data.result` |
+| `Turn.files` | `user.message.data.attachments[].path` / `.filePath`, `tool.execution_complete.data.fileEdits[].path`, `arguments.path` of `view`/`edit`/`create`/`grep`/`glob` |
+| `Turn.model` | most frequent `assistant.message.data.model` in the turn → else current model (`session.start.data.selectedModel`, updated by `session.model_change.data.newModel`) |
+| `Turn.mode` | `user.message.data.agentMode` (`interactive` \| `plan` \| `autopilot` \| `shell`) → else last `session.mode_changed.data.newMode` → `interactive` |
+| `Turn.promptTokens` / `completionTokens` | Σ `session.usage_record.data.usage.inputTokens` / `outputTokens` within the turn |
+| `Turn.credits` | Σ `usage.copilotUsage.totalNanoAiu` / 1e9 within the turn (only when `aiCreditsStatus = complete`) |
+| `Turn.elapsedMs` | last root `assistant.turn_end.timestamp` − `user.message.timestamp` |
+| `Turn.canceled` | `abort` event within the turn |
+| `Turn.hidden` | `user.message.data.source` set (`skill-*`, `agent-*`) or `data.isAutopilotContinuation` |
+
+Ignored event types: `hook.*`, `permission.*`, `external_tool.*`, `model.*`, `subagent.*`, `system.message`, `session.usage_checkpoint`, `session.shutdown`, `session.binary_asset` (base64 bytes), `assistant.turn_start`. `type` is always the first JSON key, so ignored lines are skipped before `JSON.parse`.
 
 ### 4.4 Normalized model
 
@@ -202,10 +226,20 @@ interface Turn {
 
 ### 5.1 Engine
 
-**SQLite FTS5 via `sql.js` (WASM)**, running in a Node `worker_thread`.
+**SQLite FTS5 via built-in `node:sqlite`** (file-backed, WAL), running in a Node `worker_thread` with `resourceLimits.maxOldGenerationSizeMb = 256`. Decided in spike S2 ([spikes/S2-index-engine.md](spikes/S2-index-engine.md)).
 
-- R5.1 – Spike S2 must confirm: (a) the shipped `sql.js` build has FTS5 enabled (custom build if not), (b) export/persist time and memory for the full local dataset are acceptable (§11).
-- R5.2 – Fallbacks if S2 fails, in order: `wa-sqlite` with a file-backed VFS; built-in `node:sqlite` if available in the VS Code Electron Node runtime. The storage layer is behind an `IndexStore` interface so the engine can be swapped.
+- R5.1 – ✅ Resolved by S2. Stock `sql.js` 1.15.2 has **no FTS5**, so the §5.3 schema fails. `node:sqlite` (VS Code 1.145.2: Node 24.22.1, SQLite 3.53.4; also verified in the extension host and a `worker_thread` by S1) supports the full §5.3 schema. Measured on Apple Silicon:
+
+  | Target | Real data (510 MB source, 739 turns) | Synthetic 50 000 turns |
+  |---|---|---|
+  | N2 cold build ≤ 90 s / 500 MB | 1.1 s | insert 13.2 s |
+  | N3 incremental < 1 s | 6 ms | 10 ms |
+  | N4 search p95 < 100 ms (24 queries) | 5.9 ms | 44 ms |
+  | N6 peak RSS < 600 MB | 373 MB | 361 MB |
+  | N7 index ≤ 40 % of source | 2.7 % | 1.9 % (649 MB) |
+
+  N6 depends on the 256 MB worker heap cap (without it 557–625 MB) and on **prune-on-replay**: tool payloads (`resultDetails`, `toolSpecificData`) and `result.metadata` are dropped right after each line's `JSON.parse`, or at string level for lines > 256 KB.
+- R5.2 – Fallbacks, in order: `@sqlite.org/sqlite-wasm` (in-memory + export; it works but N6 fails at 50k turns with 4.3 GB RSS); `wa-sqlite` with a file-backed VFS. A custom FTS5 `sql.js` build is not recommended. The storage layer stays behind an `IndexStore` interface.
 
 ### 5.2 Storage
 
@@ -449,14 +483,15 @@ flowchart TD
   O --> Q[Searchie activates in new window\nreads pending request ≤ 60 s old] --> C
 ```
 
-- R8.1 – *Open in Chat* mechanism is determined by spike S1. Candidates to evaluate, in order:
-  1. `vscode.open` on chat session resource URI (`vscode-chat-session://local/<base64(sessionId)>`) – opens session as chat editor.
-  2. Built-in chat commands that accept a session id/resource (inspect `workbench.action.chat.*` command list of current VS Code build).
-  3. Fallback: open the Chat view and run the history picker (`workbench.action.chat.history` or equivalent) with the session title copied to clipboard + notification "Paste to filter".
+- R8.1 – *Open in Chat* mechanism, confirmed by spike S1 ([spikes/S1-open-in-chat.md](spikes/S1-open-in-chat.md)) in VS Code 1.145.2. Calls don't throw on failure (an error editor is shown instead), so the session file must first be pre-checked in the current window's `chatSessions/` (sibling of `context.storageUri`). Order:
+  1. ✅ `vscode.open` on `vscode-chat-session://local/<base64url(sessionId), no padding>` (VS Code `LocalChatSessionUri.forSession`). Opens the session as a chat editor with full history. Available since VS Code 1.106.
+  2. ✅ `workbench.action.chat.openSessionInEditorGroup` with argument `{ resource }`, if present in `getCommands(true)`.
+  3. Fallback: read-only Preview. Offer *Pick in Chat history* as a convenience: open the Chat view, run `workbench.action.chat.pickAgentSession` (`workbench.action.chat.history` no longer exists), and copy the title to the clipboard. In S1 the pasted title did not narrow the picker, so this is not a reliable fallback.
+  - Copilot CLI sessions: `vscode.open` on `copilotcli:/<sessionId>` also opens them with history (S1). Extending R8.5 beyond Preview-only is an open decision.
 - R8.2 – The mechanism is isolated in `ChatOpener` with feature detection (`vscode.commands.getCommands`) so it can change with VS Code releases without touching the rest.
 - R8.3 – Other-workspace sessions always show the two-button choice (*Open read-only preview* / *Open workspace in new window*). Setting `searchie.open.otherWorkspaceDefault` = `ask` (default) | `preview` | `newWindow`.
 - R8.4 – Empty-window sessions: *Open in new empty window* replaces *Open workspace*.
-- R8.5 – CLI sessions: Preview only; additional action *Copy resume command* (`copilot --resume <sessionId>`, exact syntax confirmed in S3).
+- R8.5 – CLI sessions: Preview only; additional action *Copy resume command* `copilot --resume=<sessionId>` (syntax confirmed in S3 from the public CLI reference).
 - R8.6 – Insiders sessions opened from Stable (or vice versa): Preview only.
 - R8.7 – Pending-open request file: `{ sessionId, workspaceUri, createdAt }`, deleted after use, ignored if older than 60 s or workspace mismatch.
 - R8.8 – Activation: `onStartupFinished` (needed for R8.7 and background indexing) plus command / view activation events.
@@ -530,7 +565,7 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 | N6 | Worker memory peak during cold build | < 600 MB |
 | N7 | Index size | ≤ 40% of source size (images and tool outputs excluded) |
 | N8 | UI thread blocking | no task > 50 ms on extension host thread |
-| N9 | Platforms | macOS, Windows, Linux; VS Code ≥ 1.105 (exact min set after S1) |
+| N9 | Platforms | macOS, Windows, Linux; VS Code ≥ 1.106 (S1: first release with the local chat-session URI editor; its Electron 37.7 ships Node 22.20 with `node:sqlite`) |
 
 ---
 
@@ -699,5 +734,5 @@ Searchie prototype code reuse approval (R2.3), README, screenshots, icon, CHANGE
 | K6 | Searchie prototype-derived code in a public repo | MIT notice + internal approval before Phase 3 |
 | Q1 | Should the default keybinding be different? | Decide in review |
 | Q2 | Should thinking text be indexed by default? | Currently off – confirm |
-| Q3 | Group CLI sessions by repository or by cwd? | Decide after S3 |
-| Q4 | Minimum supported VS Code version | Decide after S1 |
+| Q3 | Group CLI sessions by repository or by cwd? | ✅ S3: group by folder, `git_root` → else `cwd`. `repository` is present in only 3/24 sessions, so it is used as the label only. This also merges CLI sessions with VS Code sessions of the same folder |
+| Q4 | Minimum supported VS Code version | ✅ S1: **1.106** (`engines.vscode: ^1.106.0`). Runtime-verified on 1.145.2 and source-verified for 1.106; CI smoke test on 1.106 + Stable |

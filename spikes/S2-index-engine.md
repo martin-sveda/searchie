@@ -1,8 +1,8 @@
 # S2 – Index engine: FTS5, persist cost, memory
 
-Status: ✅ **GO with `node:sqlite`.** Stock `sql.js` fails R5.1(a) because it has no FTS5. The R5.2 fallback `node:sqlite` meets N2, N3, N4, N6 and N7. Final confirmation inside the real extension host is part of S1.
+Status: ✅ **GO with `node:sqlite`.** Stock `sql.js` fails R5.1(a) because it has no FTS5. The R5.2 fallback `node:sqlite` meets N2, N3, N4, N6 and N7. It is confirmed inside the real extension host and in a `worker_thread` (S1 probe, VS Code 1.145.2).
 
-> **Decision status:** proposed, pending owner approval (spike rule 5).
+> **Decision status:** approved by the owner on 2026-11-10.
 
 ## Question
 
@@ -121,7 +121,7 @@ Without the heap cap, V8 grows the worker heap lazily. Peak RSS was then 557 MB 
    - `thinking.value` may be a string or an array;
    - all sessions are `version: 3`.
 
-## Decision (proposed)
+## Decision
 
 **Engine: built-in `node:sqlite`, file-backed (WAL), in a `worker_thread` with `resourceLimits.maxOldGenerationSizeMb = 256`.**
 
@@ -139,7 +139,7 @@ Without the heap cap, V8 grows the worker heap lazily. Peak RSS was then 557 MB 
 ## Open risks
 
 - **`node:sqlite` stability.** It has been unflagged since Node 22.13 and is a release candidate (stability 1.2) since Node 24.15. The API may still change. Mitigations: the `IndexStore` interface, and a smoke test on the minimum supported VS Code. The minimum VS Code version whose Electron ships Node ≥ 22.13 is resolved in S1 (N9).
-- **Extension host.** This spike ran in VS Code's Electron binary with `ELECTRON_RUN_AS_NODE=1`, not in the extension host itself. The S1 probe confirms `require('node:sqlite')` there.
+- **Extension host.** ~~Unverified~~ **Resolved by S1:** `require('node:sqlite')` with FTS5 and fts5vocab works in the 1.145.2 extension host and in a `worker_thread` with `resourceLimits`. Versions 1.106–1.144 (Node 22.20+) are verified from source only; Phase 1 CI should smoke-test them.
 - **Worst-case queries.** Very broad prefixes such as 3 characters matching 85 % of turns reach p95 92 ms at 50k turns. Mitigations: debounce and cancel (R6.12), and only prefix-expand queries of ≥ 3 characters.
 - **Synthetic realism.** Shuffled real text keeps the term distribution but not phrase structure, so phrase hit rates are lower than with real text. The "equivalent source" for 50k turns (34.5 GB) is extrapolated from the local average of 0.69 MB per turn.
 

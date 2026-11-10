@@ -51,7 +51,7 @@ export class SessionOpener implements SessionActions, PreviewHost, vscode.Dispos
   }
 
   async openInChat(s: SessionListItem): Promise<void> {
-    if ((await this.chat.open(s.id)) === 'opened') return;
+    if ((await this.chat.open(s.id, uiSettings().chatLocation)) === 'opened') return;
     await this.preview(s);
     const pick = await vscode.window.showInformationMessage(
       'Searchie could not open this session in Copilot Chat; it is shown as a read-only preview.',
@@ -129,7 +129,7 @@ export class SessionOpener implements SessionActions, PreviewHost, vscode.Dispos
   private async openPending(sessionId: string): Promise<void> {
     // The chat storage of a freshly opened window is on disk already; retry briefly in case the watcher fired early.
     for (let i = 0; i < 10 && !this.chat.hasLocalSession(sessionId); i++) await new Promise((r) => setTimeout(r, 300));
-    if ((await this.chat.open(sessionId)) === 'opened') return;
+    if ((await this.chat.open(sessionId, uiSettings().chatLocation)) === 'opened') return;
     const s = (await this.service.listSessions({})).find((x) => x.id === sessionId && x.source === this.service.window.source);
     if (s) await this.openInChat(s);
   }

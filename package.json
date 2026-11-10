@@ -85,7 +85,7 @@
       },
       {
         "command": "searchie.filterSessions",
-        "title": "Filter Sessions…",
+        "title": "Filter Sessions\u2026",
         "category": "Searchie",
         "icon": "$(filter)"
       },
@@ -296,7 +296,7 @@
           "default": 0.2,
           "minimum": 0,
           "maximum": 5,
-          "description": "Boost for recent turns in ranking (β in SPEC §6.3). 0 turns it off."
+          "description": "Boost for recent turns in ranking (\u03b2 in SPEC \u00a76.3). 0 turns it off."
         },
         "searchie.search.maxResults": {
           "type": "number",
@@ -319,6 +319,19 @@
           ],
           "default": "ask",
           "description": "What to do when opening a session that belongs to another workspace."
+        },
+        "searchie.open.chatLocation": {
+          "type": "string",
+          "enum": [
+            "view",
+            "editor"
+          ],
+          "enumDescriptions": [
+            "Load the session into the Chat view in the side bar, where you can continue it.",
+            "Open the session as a chat editor tab."
+          ],
+          "default": "view",
+          "description": "Where Open in Chat shows a session of the current workspace."
         },
         "searchie.tree.groupBy": {
           "type": "string",
@@ -347,7 +360,7 @@
           },
           "default": [],
           "scope": "application",
-          "markdownDescription": "Extra noise-prompt patterns: case-insensitive regular expressions matched against the whole trimmed prompt (e.g. `pokračuj`). Noise prompts rank lower and never become titles."
+          "markdownDescription": "Extra noise-prompt patterns: case-insensitive regular expressions matched against the whole trimmed prompt (e.g. `pokra\u010duj`). Noise prompts rank lower and never become titles."
         }
       }
     }

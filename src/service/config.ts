@@ -26,6 +26,7 @@ export interface UiSettings {
   recencyBoost: number;
   maxResults: number;
   otherWorkspaceDefault: 'ask' | 'preview' | 'newWindow';
+  chatLocation: 'view' | 'editor';
   groupBy: GroupBy;
   redactSecrets: boolean;
   pollIntervalMinutes: number;
@@ -42,6 +43,7 @@ export function uiSettings(): UiSettings {
     recencyBoost: num(c.get('search.recencyBoost'), 0.2, 0, 5),
     maxResults: Math.round(num(c.get('search.maxResults'), 50, 10, 500)),
     otherWorkspaceDefault: pick(c.get('open.otherWorkspaceDefault'), ['ask', 'preview', 'newWindow'], 'ask'),
+    chatLocation: pick(c.get('open.chatLocation'), ['view', 'editor'], 'view'),
     groupBy: pick(c.get('tree.groupBy'), ['workspaceDate', 'dateWorkspace', 'flat'], 'workspaceDate'),
     redactSecrets: c.get<boolean>('redactSecrets', true),
     pollIntervalMinutes: num(c.get('index.pollIntervalMinutes'), 5, 0, 24 * 60),

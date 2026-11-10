@@ -48,6 +48,7 @@ Matching ignores case and diacritics (`clenu` finds `členů`), splits identifie
 | `searchie.search.recencyBoost` | `0.2` | Boost for recent turns |
 | `searchie.search.maxResults` | `50` | Sessions per page |
 | `searchie.open.otherWorkspaceDefault` | `ask` | `ask`, `preview` or `newWindow` |
+| `searchie.open.chatLocation` | `view` | `view`: continue the session in the Chat side bar; `editor`: open it as a chat editor tab |
 | `searchie.tree.groupBy` | `workspaceDate` | `workspaceDate`, `dateWorkspace` or `flat` |
 | `searchie.redactSecrets` | `true` | Redact secrets in snippets and previews |
 

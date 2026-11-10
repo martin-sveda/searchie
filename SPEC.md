@@ -501,6 +501,7 @@ flowchart TD
 - R8.1 – *Open in Chat* mechanism, confirmed by spike S1 ([spikes/S1-open-in-chat.md](spikes/S1-open-in-chat.md)) in VS Code 1.145.2. Calls don't throw on failure (an error editor is shown instead), so the session file must first be pre-checked in the current window's chat storage: `<dirname(context.storageUri)>/chatSessions/<id>.{jsonl,json}` in a folder/workspace window, or `<dirname(context.globalStorageUri)>/emptyWindowChatSessions/<id>.{jsonl,json}` in an empty window. Order:
   1. ✅ `vscode.open` on `vscode-chat-session://local/<base64url(sessionId), no padding>` (VS Code `LocalChatSessionUri.forSession`). Opens the session as a chat editor with full history. Available since VS Code 1.106.
   2. ✅ `workbench.action.chat.openSessionInEditorGroup` with argument `{ resource }`, if present in `getCommands(true)`.
+  - Then, with `searchie.open.chatLocation = view` (default), `workbench.action.chat.openInSidebar` (*Move Chat into Side Bar*, feature-detected) loads the session into the **Chat view** and closes the temporary chat editor (VS Code `chatMoveActions.ts` → `IChatWidgetService.openSession(resource, ChatViewPaneTarget)`, which closes the editor for the move). This is the same path as clicking a session in VS Code's own sessions list, so the user continues the chat in the side bar. `editor` keeps the chat editor tab. Owner request after the Phase 1 manual test.
   3. Fallback: read-only Preview. Offer *Pick in Chat history* as a convenience: open the Chat view, run `workbench.action.chat.pickAgentSession` (`workbench.action.chat.history` no longer exists), and copy the title to the clipboard. In S1 the pasted title did not narrow the picker, so this is not a reliable fallback.
   - Copilot CLI sessions: `vscode.open` on `copilotcli:/<sessionId>` also opens them with history (S1); see R8.5.
 - R8.2 – The mechanism is isolated in `ChatOpener` with feature detection (`vscode.commands.getCommands`) so it can change with VS Code releases without touching the rest.
@@ -607,6 +608,7 @@ Settings that shape the index (`sources.*`, `additionalSessionRoots`, `excludeWo
 | `searchie.search.autoFuzzy` | boolean | `false` | Auto fuzzy when few results (Phase 2) |
 | `searchie.search.maxResults` | number | `50` | Sessions per page |
 | `searchie.open.otherWorkspaceDefault` | `ask` \| `preview` \| `newWindow` | `ask` | §8 |
+| `searchie.open.chatLocation` | `view` \| `editor` | `view` | Where *Open in Chat* shows the session (R8.1) |
 | `searchie.tree.groupBy` | `workspaceDate` \| `dateWorkspace` \| `flat` | `workspaceDate` | §7.1 |
 | `searchie.redactSecrets` | boolean | `true` | §10 |
 | `searchie.noisePatterns` | string[] | `[]` | Extra noise prompt regexes (R5.10); change triggers noise re-flag, not full re-parse |

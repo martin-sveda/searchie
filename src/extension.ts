@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { SearchieService } from './service/searchie-service';
 import type { SessionActions } from './service/session-actions';
 import { registerCommands } from './ui/commands';
+import { PreviewManager } from './ui/preview-panel';
 import { StatusBar } from './ui/status-bar';
 import { SessionsTreeProvider, type TreeNode } from './ui/tree';
 
@@ -11,7 +12,7 @@ export interface SearchieApi {
   service: SearchieService;
   tree: SessionsTreeProvider;
   /** Smoke tests replace the session actions to observe Quick Pick / tree results. */
-  setActions(actions: SessionActions): void;
+  setActions(actions: SessionActions | undefined): void;
 }
 
 function placeholderActions(): SessionActions {
@@ -28,13 +29,20 @@ export function activate(context: vscode.ExtensionContext): SearchieApi {
   const tree = new SessionsTreeProvider(service, context.globalState);
   const view = vscode.window.createTreeView<TreeNode>('searchie.sessions', { treeDataProvider: tree, showCollapseAll: true });
   tree.view = view;
-  let impl = placeholderActions();
+  const notYet = placeholderActions();
+  const previews = new PreviewManager(context, service, {
+    openActions: () => Promise.resolve({ canOpenInChat: false, openInChatLabel: 'Open in Chat', newWindowLabel: 'Open Workspace in New Window' }),
+    openInChat: (s) => notYet.open(s),
+    openWorkspaceInNewWindow: (s) => notYet.openWorkspaceInNewWindow(s),
+  });
+  const defaultActions: SessionActions = { ...notYet, preview: (s, o) => previews.show(s, o) };
+  let impl = defaultActions;
   const actions: SessionActions = {
     open: (s) => impl.open(s),
     preview: (s, o) => impl.preview(s, o),
     openWorkspaceInNewWindow: (s) => impl.openWorkspaceInNewWindow(s),
   };
-  context.subscriptions.push(log, service, tree, view, new StatusBar(service), ...registerCommands({ context, service, tree, view, actions }));
+  context.subscriptions.push(log, service, tree, view, previews, new StatusBar(service), ...registerCommands({ context, service, tree, view, actions }));
   // The worker and the first sync start after activation (N1, R5.13).
   setTimeout(() => {
     service.start().catch((e: unknown) => log.error(`start failed (${(e as Error).name})`));
@@ -46,7 +54,7 @@ export function activate(context: vscode.ExtensionContext): SearchieApi {
     service,
     tree,
     setActions: (a) => {
-      impl = a;
+      impl = a ?? defaultActions;
     },
   };
 }

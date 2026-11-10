@@ -66,6 +66,10 @@ describe('worker RPC (real worker_thread)', () => {
     expect((await client.call('sessionMeta', { key: `vscode:${MAIN_ID}` }))?.title).toBe('Sample parser refactoring');
     expect((await client.call('summary', {})).sessions).toBe(3);
     expect((await client.call('facets', {})).modes).toEqual(['Agent']);
+    const loaded = await client.call('loadSession', { key: `vscode:${MAIN_ID}` });
+    expect(loaded?.turns).toHaveLength(3);
+    expect(loaded?.turns[0]!.parts?.map((x) => x.kind)).toEqual(['thinking', 'tool', 'tool', 'markdown']);
+    expect(await client.call('loadSession', { key: 'vscode:missing' })).toBeNull();
     const found = await client.call('search', { query: 'clenu' });
     expect(found.results.map((r) => r.session.id)).toEqual([MAIN_ID]);
     const again = await client.call('sync', { throttle: true });

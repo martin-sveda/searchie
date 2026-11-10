@@ -85,7 +85,7 @@
       },
       {
         "command": "searchie.filterSessions",
-        "title": "Filter Sessions\u2026",
+        "title": "Filter Sessions…",
         "category": "Searchie",
         "icon": "$(filter)"
       },
@@ -296,7 +296,7 @@
           "default": 0.2,
           "minimum": 0,
           "maximum": 5,
-          "description": "Boost for recent turns in ranking (\u03b2 in SPEC \u00a76.3). 0 turns it off."
+          "description": "Boost for recent turns in ranking (β in SPEC §6.3). 0 turns it off."
         },
         "searchie.search.maxResults": {
           "type": "number",
@@ -347,7 +347,7 @@
           },
           "default": [],
           "scope": "application",
-          "markdownDescription": "Extra noise-prompt patterns: case-insensitive regular expressions matched against the whole trimmed prompt (e.g. `pokra\u010duj`). Noise prompts rank lower and never become titles."
+          "markdownDescription": "Extra noise-prompt patterns: case-insensitive regular expressions matched against the whole trimmed prompt (e.g. `pokračuj`). Noise prompts rank lower and never become titles."
         }
       }
     }
@@ -365,6 +365,7 @@
     "package": "node -e \"require('fs').mkdirSync('dist-vsix',{recursive:true})\" && vsce package --no-dependencies --out dist-vsix/"
   },
   "dependencies": {
+    "highlight.js": "11.12.0",
     "htm": "3.1.1",
     "markdown-it": "15.0.3",
     "preact": "10.29.8",

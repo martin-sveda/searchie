@@ -1,4 +1,4 @@
-import type { SessionMeta } from '../core/model';
+import type { SessionMeta, Turn } from '../core/model';
 import type { SearchRequest, SearchResponse } from '../query/engine';
 import type { IndexSummary, SessionListItem } from '../store/index-db';
 import type { ScanStats, IndexerSettings } from './indexer';
@@ -41,6 +41,8 @@ export interface WorkerMethods {
   summary(p: Record<string, never>): IndexSummary;
   facets(p: Record<string, never>): { models: string[]; modes: string[]; sources: string[] };
   search(p: SearchRequest): SearchResponse;
+  /** Re-parses the session file (read-only) with ordered parts for Preview. */
+  loadSession(p: { key: string }): LoadedSession | null;
   deleteIndex(p: Record<string, never>): void;
   /** Bench/tests only: pass-through heap numbers. */
   memory(p: Record<string, never>): { heapUsed: number; rss: number };
@@ -63,4 +65,11 @@ export type WorkerToHost =
   | { type: 'res'; id: number; ok: false; error: { name: string; message: string } }
   | ({ type: 'event' } & WorkerEvent);
 
+export interface LoadedSession {
+  meta: SessionMeta;
+  turns: Turn[];
+}
+
 export const WORKER_HEAP_MB = 256;
+/** Preview field cap: generous, but bounded so one huge response can't stall the webview. */
+export const PREVIEW_MAX_FIELD_CHARS = 1_000_000;

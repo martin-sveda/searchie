@@ -8,7 +8,7 @@ import type { IndexSummary, SessionListItem } from '../store/index-db';
 import { IndexLock, LOCK_HEARTBEAT_MS } from '../store/lock';
 import type { SessionMeta } from '../core/model';
 import type { IndexerSettings } from '../worker/indexer';
-import type { ListFilter, SyncResult, WorkerEvent } from '../worker/protocol';
+import type { ListFilter, LoadedSession, SyncResult, WorkerEvent } from '../worker/protocol';
 import { indexerSettings, INDEX_SETTINGS, uiSettings } from './config';
 import { RpcCancelledError, WorkerClient, type WorkerCrashedError } from './worker-client';
 
@@ -366,6 +366,11 @@ export class SearchieService implements vscode.Disposable {
     await this.start();
     const ui = uiSettings();
     return this.client.call('search', { recencyBoost: ui.recencyBoost, weights: ui.weights, redact: ui.redactSecrets, limit: ui.maxResults, ...req }, token);
+  }
+
+  async loadSession(key: string): Promise<LoadedSession | null> {
+    await this.start();
+    return this.client.call('loadSession', { key });
   }
 
   /** Workspace ids that count as "this window" (R7.4); duplicates are resolved per session (R5.19). */

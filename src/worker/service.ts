@@ -3,7 +3,9 @@ import { QueryEngine, type SearchRequest, type SearchResponse } from '../query/e
 import { IndexDb } from '../store/index-db';
 import { openNodeSqliteStore } from '../store/node-sqlite-store';
 import { CancelledError, type CancelToken, coldBuild, Indexer, type IndexerSettings, type IndexPaths, indexPaths, rebuildReason } from './indexer';
-import type { ListFilter, SyncResult, WorkerEvent, WorkerStatus } from './protocol';
+import { parserFor } from '../core/parsers';
+import { createNoiseMatcher } from '../core/text';
+import { type ListFilter, type LoadedSession, PREVIEW_MAX_FIELD_CHARS, type SyncResult, type WorkerEvent, type WorkerStatus } from './protocol';
 
 /** Worker-side state: owns the index connection and the indexer. Methods mirror `WorkerMethods`. */
 export class WorkerService {
@@ -172,6 +174,22 @@ export class WorkerService {
     if (token?.cancelled) throw new CancelledError();
     if (!this.engine) return { results: [], total: 0, offset: 0, tookMs: 0, terms: [], warnings: [], mode: 'list' };
     return this.engine.search(p);
+  }
+
+  async loadSession(p: { key: string }): Promise<LoadedSession | null> {
+    const meta = this.db?.sessionMeta(p.key);
+    if (!meta) return null;
+    const settings = this.requireSettings();
+    const isNoise = createNoiseMatcher(settings.noisePatterns);
+    for (const filePath of [meta.filePath, ...meta.copies.map((c) => c.filePath)]) {
+      if (!fs.existsSync(filePath)) continue;
+      const kind = filePath.toLowerCase().endsWith('.json') ? 'json' : 'jsonl';
+      const parser = parserFor({ path: filePath, source: meta.source, kind });
+      if (!parser) return null;
+      const parsed = await parser.parse({ path: filePath, source: meta.source, kind }, { maxFieldChars: PREVIEW_MAX_FIELD_CHARS, isNoise, withParts: true });
+      if (parsed) return { meta, turns: parsed.turns };
+    }
+    return null;
   }
 
   /** R10.3 – closes the connection and removes the index files; throws if a file can't be removed (e.g. Windows EBUSY). */

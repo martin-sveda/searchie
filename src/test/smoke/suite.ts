@@ -84,6 +84,17 @@ export async function run(): Promise<void> {
   const accepted = await Promise.race([opened, new Promise<undefined>((r) => setTimeout(() => r(undefined), 5000))]);
   assert(accepted?.id === MAIN_ID, 'searchie.search Quick Pick returns the expected session');
   results.quickPick = 'ok';
+  api.setActions(undefined);
+
+  // Preview (R7.21): a webview tab titled "Searchie: <title>".
+  await vscode.commands.executeCommand('searchie.preview', accepted);
+  const tab = await waitFor(
+    () => vscode.window.tabGroups.all.flatMap((g) => g.tabs).find((t) => t.input instanceof vscode.TabInputWebview && t.label.startsWith('Searchie: Sample parser')),
+    (t) => t !== undefined,
+    10_000,
+  );
+  results.previewTab = tab ? 'ok' : 'missing';
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 
   for (let i = 0; i < 20; i++) await api.service.search({ query: i % 2 ? 'placeholder' : 'refact*' });
   await vscode.commands.executeCommand('searchie.refresh');

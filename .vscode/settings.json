@@ -1,0 +1,8 @@
+{
+    "chat.tools.terminal.autoApprove": {
+        "/^cd ~/Library/Application\\\\ Support/Code/User/workspaceStorage/c4f1006a5c7dfce5ba0ceb4c298d8f39/chatSessions && python3 - <<'EOF'\nimport json,collections\nf='63e5b5a0-6b2d-4f17-b67a-428e46813182\\.jsonl'\nkinds=collections\\.Counter\\(\\); paths=collections\\.Counter\\(\\)\nfor l in open\\(f\\):\n    e=json\\.loads\\(l\\); kinds\\[e\\['kind'\\]\\]\\+=1\n    if 'k' in e: paths\\[str\\(e\\['k'\\]\\[:3\\]\\)\\]\\+=1\nprint\\(kinds\\); print\\(paths\\.most_common\\(12\\)\\)\nEOF\nls ~/\\.copilot/session-state 2>/dev/null \\| head -3; ls ~/Library/Application\\\\ Support/Code\\\\ -\\\\ Insiders/User 2>/dev/null \\| head -3$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
+}

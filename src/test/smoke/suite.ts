@@ -5,6 +5,7 @@ import type { SearchieApi } from '../../extension';
 import type { SessionListItem } from '../../store/index-db';
 import type { TreeNode } from '../../ui/tree';
 import { localChatSessionUri } from '../../service/chat-opener';
+import { buildPreviewData } from '../../ui/preview-data';
 
 /** Runs inside the extension host (no mocha): activation, tree from fixtures, search, node:sqlite in the worker, N1/N8. */
 
@@ -119,6 +120,19 @@ export async function run(): Promise<void> {
   loop.disable();
   results.eventLoopDelayMaxMs = Math.round(loop.max / 1e5) / 10;
   results.eventLoopDelayP99Ms = Math.round(loop.percentile(99) / 1e5) / 10;
+
+  // N8 attribution: only Searchie's own host-side work (tree, search RPC, session load, preview payload), repeated.
+  const own = monitorEventLoopDelay({ resolution: 10 });
+  own.enable();
+  for (let i = 0; i < 30; i++) {
+    api.tree.refresh();
+    await collectSessions(api);
+    await api.service.search({ query: i % 2 ? 'placeholder' : 'parser OR refact*' });
+    const loaded = await api.service.loadSession(`vscode:${MAIN_ID}`);
+    if (loaded) await buildPreviewData(loaded, true);
+  }
+  own.disable();
+  results.searchieOnlyEventLoopDelayMaxMs = Math.round(own.max / 1e5) / 10;
   results.keybindingConflicts = await keybindingConflicts();
 
   if (process.env.SEARCHIE_SMOKE_OUT) fs.writeFileSync(process.env.SEARCHIE_SMOKE_OUT, JSON.stringify(results, null, 2));

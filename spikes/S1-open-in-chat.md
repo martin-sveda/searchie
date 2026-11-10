@@ -2,6 +2,9 @@
 
 Status: ✅ **GO.** `vscode.open` on the local chat-session URI opens a same-workspace session as a chat editor with its full history. This was confirmed by the owner in VS Code 1.145.2. As a bonus, Copilot CLI sessions also open in VS Code through `copilotcli:/<id>`.
 
+
+> **Archived.** The spike code referenced below was removed in Phase 1 after its production replacement in `src/` was tested. It is preserved in the git tag `phase0-spikes` (`git checkout phase0-spikes -- spikes/s1-chat-open`).
+
 ## Question
 
 Is there a working, ideally public, way in VS Code 1.145.2 (Stable) to open an existing **same-workspace** chat session by its `sessionId` (R8.1)? What is the fallback, and which minimum VS Code version does it need (Q4, N9)? The probe also checks whether `node:sqlite` works inside the extension host, which S2 depends on.

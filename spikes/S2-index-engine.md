@@ -4,6 +4,9 @@ Status: ✅ **GO with `node:sqlite`.** Stock `sql.js` fails R5.1(a) because it h
 
 > **Decision status:** approved by the owner on 2026-11-10.
 
+
+> **Archived.** The spike code referenced below was removed in Phase 1 after its production replacement in `src/` was tested. It is preserved in the git tag `phase0-spikes` (`git checkout phase0-spikes -- spikes/s2-index-engine`).
+
 ## Question
 
 Does the shipped `sql.js` have FTS5 and `fts5vocab` for the exact §5.3 schema? What do cold build, persist, memory, index size and search latency look like for the full local dataset and at 50 000 turns (N2, N3, N4, N6, N7)? If `sql.js` fails, which fallback engine should be used?

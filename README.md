@@ -25,6 +25,15 @@ Sources in this version: VS Code Stable, VS Code Insiders and empty-window sessi
 
 Matching ignores case and diacritics (`clenu` finds `členů`), splits identifiers (`parse json` finds `parseJsonLine`) and file paths (`parser` finds `src/parser-vscode.ts`). Trivial prompts such as `continue` or `yes` rank lower.
 
+While you type, VS Code moves sessions whose *title* matches the typed text to the top of the Quick Pick (the stable API can't turn label sorting off); everything else keeps Searchie's ranking.
+
+## Opening sessions
+
+- **Same workspace:** *Open in Chat* (Enter in Quick Pick, 💬 in the Sessions view) loads the session into the **Chat view**, where you can continue it (`searchie.open.chatLocation`: `view` or `editor`).
+- **Other workspace:** choose *Open Read-only Preview* or *Open Workspace in New Window*; the new window loads the session into its Chat view. `searchie.open.otherWorkspaceDefault` skips the question.
+- **Empty-window sessions** open in a new empty window. **Insiders ↔ Stable** sessions open as a Preview only.
+- **Preview** (👁): the conversation with collapsed *Thinking*, tool calls without output, referenced files (struck through when they don't exist on this machine), your search terms highlighted (↑/↓ to jump), ⌘F/Ctrl+F find, and a *Show secrets* toggle.
+
 ## Privacy
 
 - Searchie only **reads** VS Code's chat session files. It never writes, moves or locks them.

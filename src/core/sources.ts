@@ -84,11 +84,12 @@ export function resolveRoots(settings: SourceSettings, env: PlatformEnv = curren
   for (const r of defaultUserDirs(env)) {
     if (r.source === 'vscode' ? settings.vscode : settings.vscodeInsiders) add({ ...r, additional: false });
   }
+  const p = env.platform === 'win32' ? path.win32 : path.posix;
   for (const raw of settings.additionalSessionRoots) {
     if (typeof raw !== 'string' || !raw.trim()) continue;
     let dir = raw.trim();
-    if (dir === '~' || dir.startsWith('~/') || dir.startsWith('~\\')) dir = path.join(env.home, dir.slice(1));
-    add({ source: sourceForPath(dir), userDir: path.resolve(dir), additional: true });
+    if (dir === '~' || dir.startsWith('~/') || dir.startsWith('~\\')) dir = p.join(env.home, dir.slice(1));
+    add({ source: sourceForPath(dir), userDir: p.resolve(dir), additional: true });
   }
   return roots;
 }

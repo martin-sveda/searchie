@@ -41,8 +41,9 @@ export function activate(context: vscode.ExtensionContext): SearchieApi {
       .then(() => opener.startPendingOpenListener())
       .catch((e: unknown) => log.error(`start failed (${(e as Error).name})`));
   }, 0);
-  const activationMs = performance.now() - t0;
-  log.info(`activated in ${activationMs.toFixed(1)} ms (VS Code ${vscode.version})`);
+  const loadStart = (globalThis as { __searchieLoadStart?: number }).__searchieLoadStart ?? t0;
+  const activationMs = performance.now() - loadStart;
+  log.info(`activated in ${activationMs.toFixed(1)} ms incl. module load (activate() ${(performance.now() - t0).toFixed(1)} ms, VS Code ${vscode.version})`);
   return {
     activationMs,
     service,

@@ -198,14 +198,16 @@ async function run(label: string, root: string, outDir: string, reps: number, by
   const srcBytes = bytesPerTurn ? bytesPerTurn * counts.turns : src.bytes;
   const per500 = srcBytes > 0 ? buildMs / (srcBytes / (500 * 1024 * 1024)) / 1000 : 0;
 
+  // Fixed overhead dominates tiny sources (e.g. the fixtures), so N2/N7 are only judged from 10 MB on.
+  const judge = (ok: boolean): string => (srcBytes < 10 * 1024 * 1024 ? 'n/a (< 10 MB source)' : ok ? '✅' : '❌');
   console.log(`\n## ${label}`);
   console.log(`source: ${src.files} files, ${mb(src.bytes)} MB${bytesPerTurn ? ` (equivalent real source: ${mb(srcBytes)} MB)` : ''} · indexed: ${counts.sessions} sessions, ${counts.turns} turns · failed files: ${built.stats?.failed ?? 0}`);
   console.log('| Target | Value | Limit | Pass |\n|---|---|---|---|');
-  console.log(`| N2 cold build | ${(buildMs / 1000).toFixed(2)} s (${per500.toFixed(2)} s per 500 MB) | ≤ 90 s / 500 MB | ${per500 <= 90 ? '✅' : '❌'} |`);
+  console.log(`| N2 cold build | ${(buildMs / 1000).toFixed(2)} s (${per500.toFixed(2)} s per 500 MB) | ≤ 90 s / 500 MB | ${judge(per500 <= 90)} |`);
   console.log(`| N3 incremental, 1 session (${incr.turns} turns, ${incr.parsed} parsed) | ${incr.ms.toFixed(0)} ms | < 1000 ms | ${incr.ms < 1000 ? '✅' : '❌'} |`);
   console.log(`| N4 search p95 (${queries.length} queries × ${reps}) | ${pct(all, 0.95).toFixed(1)} ms (p50 ${pct(all, 0.5).toFixed(1)}, max ${(all.at(-1) ?? 0).toFixed(1)}) | < 100 ms @ 50k turns | ${pct(all, 0.95) < 100 ? '✅' : '❌'} |`);
   console.log(`| N6 peak RSS during cold build | ${mb(buildPeak)} MB (baseline ${mb(baseline)} MB) | < 600 MB | ${buildPeak < 600 * 1024 * 1024 ? '✅' : '❌'} |`);
-  console.log(`| N7 index size | ${mb(idx)} MB = ${srcBytes ? ((idx / srcBytes) * 100).toFixed(1) : '—'} % of source | ≤ 40 % | ${srcBytes && idx / srcBytes <= 0.4 ? '✅' : '❌'} |`);
+  console.log(`| N7 index size | ${mb(idx)} MB = ${srcBytes ? ((idx / srcBytes) * 100).toFixed(1) : '—'} % of source | ≤ 40 % | ${judge(srcBytes > 0 && idx / srcBytes <= 0.4)} |`);
   console.log('\n| Query type | n | matched sessions (avg) | p50 ms | p95 ms |\n|---|---|---|---|---|');
   for (const [type, e] of byType) {
     const t = [...e.times].sort((a, b) => a - b);

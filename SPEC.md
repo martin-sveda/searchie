@@ -725,6 +725,8 @@ searchie/
 
 Parsers (VS Code + Insiders + empty window), indexer, Quick Pick search, Sessions tree with tooltip stats, Preview, Open in Chat / New window, settings, tests.
 
+Status: implemented in 0.1.0 (see CHANGELOG.md). Measured on Apple Silicon: N1 5–6 ms activation incl. module load; N2 1.3 s cold build for 467 MB of real sessions; N3 303 ms for the largest real session; N4 p95 7.9 ms (real) / 29 ms (50 000 synthetic turns); N6 254 MB peak RSS; N7 2.8 % of source; N8 Searchie's own host work ≤ 13 ms per task. Smoke-tested on VS Code 1.106.0 and 1.145.2.
+
 ### Phase 2 – Internal release
 
 Search Panel, Statistics view, Copilot CLI source, fuzzy + suggestions, CSV export. Distributed as VSIX via internal GitHub releases.

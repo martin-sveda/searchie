@@ -20,7 +20,8 @@ const nodeCommon = {
 
 /** @type {esbuild.BuildOptions[]} */
 const builds = [
-  { ...nodeCommon, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js' },
+  // The banner timestamps bundle evaluation so the logged activation time includes module loading (N1).
+  { ...nodeCommon, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js', banner: { js: 'globalThis.__searchieLoadStart = performance.now();' } },
   { ...nodeCommon, entryPoints: ['src/worker/worker.ts'], outfile: 'dist/worker.js' },
   {
     bundle: true,

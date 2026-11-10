@@ -257,7 +257,8 @@ interface Turn {
 
 ```sql
 CREATE TABLE meta      (key TEXT PRIMARY KEY, value TEXT);  -- schemaVersion, parserVersion, indexConfig, noisePatterns
-CREATE TABLE workspaces(id TEXT PRIMARY KEY, source TEXT, name TEXT, uri TEXT);
+CREATE TABLE workspaces(id TEXT PRIMARY KEY, source TEXT, name TEXT, uri TEXT,
+                        fingerprint TEXT);                             -- §5.5
 CREATE TABLE files     (path TEXT PRIMARY KEY, source TEXT, workspace_id TEXT,
                         mtime INTEGER, size INTEGER, parser_version INTEGER,
                         session_key TEXT, status TEXT, error TEXT);  -- status: ok | empty | duplicate | failed
@@ -313,7 +314,7 @@ Workspace ids are `<source>:<storage hash>` or `<source>:empty-window`, so Stabl
 
 ```mermaid
 flowchart TD
-  T[Trigger: startup / file watcher / manual] --> W{Workspace fingerprint\nmtime+count of chatSessions changed?}
+  T[Trigger: startup / file watcher / manual] --> W{Workspace fingerprint changed?\ndir mtime + file count +\nmax file mtime + total size}
   W -- no --> S[skip]
   W -- yes --> F{Per file: mtime/size/parser_version changed?}
   F -- no --> S
@@ -321,6 +322,7 @@ flowchart TD
   C --> X[Removed files → delete rows]
 ```
 
+- R5.20 – The workspace fingerprint includes the max file mtime and total size, because VS Code appends to the `.jsonl` of an active session, which changes neither the directory mtime nor the file count. It costs one `stat` per file and lets an unchanged workspace skip all per-file comparisons.
 - R5.13 – Startup: index opens immediately (UI usable with stale data), then a background scan runs.
 - R5.14 – File watching: `vscode.workspace.createFileSystemWatcher` with `RelativePattern` on each source root (`**/chatSessions/*.{jsonl,json}`, `**/events.jsonl`), debounced 2 s per file. Fallback poll every 5 min (`searchie.index.pollIntervalMinutes`).
 - R5.15 – Active session being written is re-indexed at most once per 10 s.

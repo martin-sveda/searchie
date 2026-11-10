@@ -90,12 +90,12 @@ export function buildTurnText(title: string, t: Turn, config: IndexConfig): Reco
   return { title, prompt, response, tools, files, aux };
 }
 
-const SESSION_LIST_SQL = `SELECT s.key, s.id, s.source, s.workspace_id AS workspaceId, COALESCE(w.name, s.workspace_id) AS workspaceName,
+export const SESSION_LIST_SQL = `SELECT s.key, s.id, s.source, s.workspace_id AS workspaceId, COALESCE(w.name, s.workspace_id) AS workspaceName,
   w.uri AS workspaceUri, s.title, s.created_at AS createdAt, s.last_at AS lastActivityAt, s.turn_count AS turnCount,
   s.prompt_count AS promptCount, s.credits, s.primary_model AS primaryModel, s.primary_mode AS primaryMode
   FROM sessions s LEFT JOIN workspaces w ON w.id = s.workspace_id`;
 
-type ListRow = Omit<SessionListItem, 'workspaceUri' | 'credits' | 'primaryModel' | 'primaryMode'> & {
+export type ListRow = Omit<SessionListItem, 'workspaceUri' | 'credits' | 'primaryModel' | 'primaryMode'> & {
   workspaceUri: string | null;
   credits: number | null;
   primaryModel: string | null;

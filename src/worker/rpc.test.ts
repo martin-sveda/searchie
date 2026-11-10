@@ -66,6 +66,8 @@ describe('worker RPC (real worker_thread)', () => {
     expect((await client.call('sessionMeta', { key: `vscode:${MAIN_ID}` }))?.title).toBe('Sample parser refactoring');
     expect((await client.call('summary', {})).sessions).toBe(3);
     expect((await client.call('facets', {})).modes).toEqual(['Agent']);
+    const found = await client.call('search', { query: 'clenu' });
+    expect(found.results.map((r) => r.session.id)).toEqual([MAIN_ID]);
     const again = await client.call('sync', { throttle: true });
     expect(again).toMatchObject({ rebuilt: null, stats: { parsed: 0 } });
     expect((await client.call('memory', {})).heapUsed).toBeGreaterThan(0);
@@ -95,6 +97,7 @@ describe('worker RPC (real worker_thread)', () => {
     await client.call('deleteIndex', {});
     expect(fs.existsSync(path.join(dir, 'index.sqlite'))).toBe(false);
     expect(await client.call('listSessions', {})).toEqual([]);
+    expect((await client.call('search', { query: 'x' })).results).toEqual([]);
     expect(await client.call('status', {})).toMatchObject({ hasIndex: false });
   });
 

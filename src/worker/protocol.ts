@@ -1,4 +1,5 @@
 import type { SessionMeta } from '../core/model';
+import type { SearchRequest, SearchResponse } from '../query/engine';
 import type { IndexSummary, SessionListItem } from '../store/index-db';
 import type { ScanStats, IndexerSettings } from './indexer';
 
@@ -39,6 +40,7 @@ export interface WorkerMethods {
   sessionMeta(p: { key: string }): SessionMeta | null;
   summary(p: Record<string, never>): IndexSummary;
   facets(p: Record<string, never>): { models: string[]; modes: string[]; sources: string[] };
+  search(p: SearchRequest): SearchResponse;
   deleteIndex(p: Record<string, never>): void;
   /** Bench/tests only: pass-through heap numbers. */
   memory(p: Record<string, never>): { heapUsed: number; rss: number };

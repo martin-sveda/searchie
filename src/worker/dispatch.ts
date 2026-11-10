@@ -17,6 +17,7 @@ export const HANDLERS = {
   sessionMeta: (s, p: { key: string }) => s.sessionMeta(p),
   summary: (s) => s.summary(),
   facets: (s) => s.facets(),
+  search: (s, p: Parameters<WorkerService['search']>[0], t) => s.search(p, t),
   deleteIndex: (s) => s.deleteIndex(),
   memory: () => ({ heapUsed: process.memoryUsage().heapUsed, rss: process.memoryUsage().rss }),
 } satisfies Record<MethodName, Handler>;

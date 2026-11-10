@@ -13,7 +13,7 @@ import { UNTITLED } from './format';
 
 export interface PreviewHost {
   /** Label and availability of the primary action (§8): Open in Chat, or the other-workspace variant. */
-  openActions(session: SessionListItem): Promise<{ canOpenInChat: boolean; openInChatLabel: string; newWindowLabel: string }>;
+  openActions(session: SessionListItem): Promise<{ canOpenInChat: boolean; canOpenNewWindow: boolean; openInChatLabel: string; newWindowLabel: string }>;
   openInChat(session: SessionListItem): Promise<void>;
   openWorkspaceInNewWindow(session: SessionListItem): Promise<void>;
 }

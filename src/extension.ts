@@ -3,6 +3,7 @@ import { SearchieService } from './service/searchie-service';
 import type { SessionActions } from './service/session-actions';
 import { registerCommands } from './ui/commands';
 import { PreviewManager } from './ui/preview-panel';
+import { SessionOpener } from './service/session-opener';
 import { StatusBar } from './ui/status-bar';
 import { SessionsTreeProvider, type TreeNode } from './ui/tree';
 
@@ -15,13 +16,6 @@ export interface SearchieApi {
   setActions(actions: SessionActions | undefined): void;
 }
 
-function placeholderActions(): SessionActions {
-  const notYet = async (): Promise<void> => {
-    await vscode.window.showInformationMessage('Searchie: opening sessions arrives in a later milestone.');
-  };
-  return { open: notYet, preview: notYet, openWorkspaceInNewWindow: notYet };
-}
-
 export function activate(context: vscode.ExtensionContext): SearchieApi {
   const t0 = performance.now();
   const log = vscode.window.createOutputChannel('Searchie', { log: true });
@@ -29,23 +23,23 @@ export function activate(context: vscode.ExtensionContext): SearchieApi {
   const tree = new SessionsTreeProvider(service, context.globalState);
   const view = vscode.window.createTreeView<TreeNode>('searchie.sessions', { treeDataProvider: tree, showCollapseAll: true });
   tree.view = view;
-  const notYet = placeholderActions();
-  const previews = new PreviewManager(context, service, {
-    openActions: () => Promise.resolve({ canOpenInChat: false, openInChatLabel: 'Open in Chat', newWindowLabel: 'Open Workspace in New Window' }),
-    openInChat: (s) => notYet.open(s),
-    openWorkspaceInNewWindow: (s) => notYet.openWorkspaceInNewWindow(s),
-  });
-  const defaultActions: SessionActions = { ...notYet, preview: (s, o) => previews.show(s, o) };
+  const opener = new SessionOpener(service);
+  const previews = new PreviewManager(context, service, opener);
+  opener.attachPreviews(previews);
+  const defaultActions: SessionActions = opener;
   let impl = defaultActions;
   const actions: SessionActions = {
     open: (s) => impl.open(s),
     preview: (s, o) => impl.preview(s, o),
     openWorkspaceInNewWindow: (s) => impl.openWorkspaceInNewWindow(s),
   };
-  context.subscriptions.push(log, service, tree, view, previews, new StatusBar(service), ...registerCommands({ context, service, tree, view, actions }));
+  context.subscriptions.push(log, service, tree, view, previews, opener, new StatusBar(service), ...registerCommands({ context, service, tree, view, actions }));
   // The worker and the first sync start after activation (N1, R5.13).
   setTimeout(() => {
-    service.start().catch((e: unknown) => log.error(`start failed (${(e as Error).name})`));
+    service
+      .start()
+      .then(() => opener.startPendingOpenListener())
+      .catch((e: unknown) => log.error(`start failed (${(e as Error).name})`));
   }, 0);
   const activationMs = performance.now() - t0;
   log.info(`activated in ${activationMs.toFixed(1)} ms (VS Code ${vscode.version})`);

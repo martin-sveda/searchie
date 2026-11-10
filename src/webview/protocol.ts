@@ -57,6 +57,7 @@ export const HostToWebviewSchema = z.discriminatedUnion('type', [
     scrollTo: z.optional(z.int()),
     redacted: z.boolean(),
     canOpenInChat: z.boolean(),
+    canOpenNewWindow: z.boolean(),
     openInChatLabel: z.string(),
     newWindowLabel: z.string(),
   }),

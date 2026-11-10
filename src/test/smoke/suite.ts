@@ -4,6 +4,7 @@ import * as vscode from 'vscode';
 import type { SearchieApi } from '../../extension';
 import type { SessionListItem } from '../../store/index-db';
 import type { TreeNode } from '../../ui/tree';
+import { localChatSessionUri } from '../../service/chat-opener';
 
 /** Runs inside the extension host (no mocha): activation, tree from fixtures, search, node:sqlite in the worker, N1/N8. */
 
@@ -94,6 +95,23 @@ export async function run(): Promise<void> {
     10_000,
   );
   results.previewTab = tab ? 'ok' : 'missing';
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
+  // R8.1 – the local chat-session URI (base64url, no padding) and the feature-detected fallback command.
+  const uri = localChatSessionUri(MAIN_ID);
+  assert(uri.toString() === `vscode-chat-session://local/${Buffer.from(MAIN_ID).toString('base64url')}` && !uri.path.includes('='), 'chat session URI');
+  results.openSessionInEditorGroupCommand = (await vscode.commands.getCommands(true)).includes('workbench.action.chat.openSessionInEditorGroup');
+  // Fixture sessions are not in this window's chat storage, so Open falls back to the other-workspace flow;
+  // with otherWorkspaceDefault = preview it must open a Preview tab, never an error editor.
+  await vscode.workspace.getConfiguration('searchie').update('open.otherWorkspaceDefault', 'preview', vscode.ConfigurationTarget.Global);
+  await vscode.commands.executeCommand('searchie.openInChat', accepted);
+  const fallback = await waitFor(
+    () => vscode.window.tabGroups.all.flatMap((g) => g.tabs).find((t) => t.input instanceof vscode.TabInputWebview && t.label.startsWith('Searchie: Sample parser')),
+    (t) => t !== undefined,
+    10_000,
+  );
+  results.otherWorkspaceOpensPreview = fallback ? 'ok' : 'missing';
+  await vscode.workspace.getConfiguration('searchie').update('open.otherWorkspaceDefault', undefined, vscode.ConfigurationTarget.Global);
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 
   for (let i = 0; i < 20; i++) await api.service.search({ query: i % 2 ? 'placeholder' : 'refact*' });

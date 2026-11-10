@@ -18,6 +18,7 @@ interface InitState {
   scrollTo?: number;
   redacted: boolean;
   canOpenInChat: boolean;
+  canOpenNewWindow: boolean;
   openInChatLabel: string;
   newWindowLabel: string;
 }
@@ -84,7 +85,7 @@ function App(): VNode {
         reveal.current = { terms: m.terms, scrollTo: m.scrollTo };
         setError(undefined);
         setVersion((v) => v + 1);
-        setState({ data: m.data, terms: m.terms, scrollTo: m.scrollTo, redacted: m.redacted, canOpenInChat: m.canOpenInChat, openInChatLabel: m.openInChatLabel, newWindowLabel: m.newWindowLabel });
+        setState({ data: m.data, terms: m.terms, scrollTo: m.scrollTo, redacted: m.redacted, canOpenInChat: m.canOpenInChat, canOpenNewWindow: m.canOpenNewWindow, openInChatLabel: m.openInChatLabel, newWindowLabel: m.newWindowLabel });
       } else if (m.type === 'reveal') {
         reveal.current = { terms: m.terms, scrollTo: m.scrollTo };
         setState((s) => (s ? { ...s, terms: m.terms, scrollTo: m.scrollTo } : s));
@@ -162,7 +163,7 @@ function App(): VNode {
       </div>
       <div class="actions">
         ${state.canOpenInChat ? html`<button onClick=${() => vscode.postMessage({ type: 'openInChat' })}>${state.openInChatLabel}</button>` : ''}
-        <button class="secondary" onClick=${() => vscode.postMessage({ type: 'openNewWindow' })}>${state.newWindowLabel}</button>
+        ${state.canOpenNewWindow ? html`<button class="secondary" onClick=${() => vscode.postMessage({ type: 'openNewWindow' })}>${state.newWindowLabel}</button>` : ''}
         <button class="secondary" onClick=${() => vscode.postMessage({ type: 'copySessionId' })}>Copy Session ID</button>
         <label class="toggle">
           <input type="checkbox" checked=${!state.redacted} onChange=${(e: Event) => vscode.postMessage({ type: 'setRedacted', redacted: !(e.target as HTMLInputElement).checked })} />

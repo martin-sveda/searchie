@@ -5,7 +5,7 @@
 | Repository | `searchie` |
 | Display name | **Searchie** |
 | Type | VS Code extension |
-| Status | Draft v0.2 – Phase 0 spike outcomes incorporated, for review |
+| Status | Draft v0.3 – Phase 1 follow-ups from the spikes applied (dedupe, §4.2 fixes, engine consistency) |
 | Date | 2026-11-10 |
 
 ---
@@ -58,7 +58,7 @@ Searchie is an independent repository. Proven concepts and code are **copied** (
 | `redact-secrets.ts` | Secret redaction in snippets and preview |
 | Worker pattern (`parse-worker.ts`, `parse-chunking.ts`) | Off-thread indexing with chunked IPC |
 | Per-workspace fingerprint cache (`cache.ts`) | Fast change detection |
-| Tooling: esbuild, Vitest, zod, Preact + htm, Chart.js | Same stack |
+| Tooling: esbuild, Vitest, zod, Preact + htm, Chart.js | Same stack. The index engine is Searchie's own: built-in `node:sqlite` (§5.1), so there is no WASM asset to bundle |
 
 Requirements:
 
@@ -92,7 +92,7 @@ Linux / Windows equivalents follow Searchie prototype `findVsCodeDirs` (`~/.conf
 ### 3.3 Requirements
 
 - R3.1 – Each source can be enabled/disabled in settings; missing roots are silently skipped.
-- R3.2 – Additional roots (WSL, dev containers, remote homes) configurable via `searchie.additionalSessionRoots`.
+- R3.2 – Additional roots (WSL, dev containers, remote homes) configurable via `searchie.additionalSessionRoots`. A root is a VS Code `User/` directory (it contains `workspaceStorage/` and/or `globalStorage/`). Its source is `vscode-insiders` when the path contains `insiders` (case-insensitive), else `vscode`. Copilot CLI roots (`session-state/`) are accepted from Phase 2 on.
 - R3.3 – Workspaces can be excluded via `searchie.excludeWorkspaces` (glob on folder path).
 - R3.4 – Source files are opened **read-only**. Searchie never writes to any source directory.
 - R3.5 – Files locked or being written (CLI `inuse.*.lock`) are read anyway; a parse failure is retried on next change, not reported as fatal.
@@ -118,10 +118,12 @@ Each line is one operation (verified on current VS Code builds):
 - R4.5 – Legacy `.json` files are parsed as a single snapshot.
 - R4.6 – The reconstructed object is validated with zod (lenient: unknown fields allowed, required fields: `sessionId`, `requests`).
 - R4.7 – Parser has a `PARSER_VERSION` constant; bumping it forces re-index of all files.
+- R4.13 – **Prune on replay** (required for N6, spike S2): right after each line's `JSON.parse`, fields that are never indexed or previewed are dropped before the entry is applied, so they never accumulate in memory. `toolInvocationSerialized` parts keep only `kind`, `toolId`, `toolCallId`, `invocationMessage`, `source`, `isComplete` and `toolSpecificData.commandLine`; `result.metadata` is dropped. For lines longer than 256 KB, the values of `resultDetails`, `toolSpecificData` and `metadata` are removed at string level before `JSON.parse` (the terminal command line is then lost for that call).
+- R4.14 – Lines longer than 64 MB (R10.7) are skipped without being held in memory and counted as malformed.
 
 ### 4.2 Field mapping (VS Code)
 
-Observed request fields: `requestId`, `timestamp`, `message`, `response[]`, `result`, `modelId`, `modeInfo`, `agent`, `promptTokens`, `completionTokens`, `copilotCredits`, `elapsedMs`, `contentReferences`, `variableData`, `hiddenFromTranscript`, `isCanceled`.
+Observed request fields: `requestId`, `timestamp`, `message`, `response[]`, `result`, `modelId`, `modeInfo`, `agent`, `promptTokens`, `completionTokens`, `copilotCredits`, `elapsedMs`, `contentReferences`, `variableData`, `hiddenFromTranscript`, `isSystemInitiated`, `modelState`. There is no `isCanceled` field (S2, VS Code 1.145.2; all sessions are `version: 3`).
 
 | Model field | Source |
 |---|---|
@@ -129,15 +131,16 @@ Observed request fields: `requestId`, `timestamp`, `message`, `response[]`, `res
 | `session.createdAt` | `creationDate` |
 | `turn.prompt` | `message.text` |
 | `turn.response` | concatenated `response[]` parts with no `kind` (markdown `value`) + `inlineReference` names |
-| `turn.thinking` | `response[kind=thinking]` – **not indexed by default** (setting) |
-| `turn.toolCalls` | `response[kind=toolInvocationSerialized]` → tool id + invocation message / arguments (no output) |
-| `turn.files` | `contentReferences`, `variableData` attachments, `codeblockUri`, `textEditGroup` URIs → file paths only |
+| `turn.thinking` | `response[kind=thinking].value` – a string **or an array of strings**; **not indexed by default** (setting; when on, appended to the hidden `aux` column) |
+| `turn.toolCalls` | `response[kind=toolInvocationSerialized]` → tool id + invocation message, plus `toolSpecificData.commandLine` for terminal tools (no output) |
+| `turn.files` | `contentReferences`, `variableData` variables of kind `file`, `codeblockUri`, `textEditGroup` URIs → file paths only |
 | `turn.model` | `modelId` |
 | `turn.mode` | `modeInfo` / `inputState.mode` (`agent`, `ask`, `edit`, custom agent file) |
 | `turn.tokens` | `promptTokens`, `completionTokens` |
 | `turn.credits` | `copilotCredits` |
 | `turn.elapsedMs` | `elapsedMs` |
-| `turn.hidden` | `hiddenFromTranscript` |
+| `turn.hidden` | `hiddenFromTranscript` or `isSystemInitiated` |
+| `turn.canceled` | `modelState.value === 2` |
 
 - R4.8 – Attachment **content** (e.g. `result.metadata.renderedUserMessage`) is never indexed – only file names/paths.
 - R4.9 – Tool **outputs** and terminal output are never indexed.
@@ -178,10 +181,11 @@ Ignored event types: `hook.*`, `permission.*`, `external_tool.*`, `model.*`, `su
 interface SessionMeta {
   id: string;                 // sessionId
   source: 'vscode' | 'vscode-insiders' | 'copilot-cli';
-  workspaceId: string;        // storage hash, 'empty-window', or CLI cwd hash
+  workspaceId: string;        // '<source>:<storage hash>', '<source>:empty-window', or CLI cwd hash
   workspaceName: string;
   workspaceUri?: string;      // folder or .code-workspace URI
   filePath: string;
+  copies: { workspaceId: string; filePath: string }[];  // other copies of the same session (R5.19)
   title: string;
   createdAt: number;
   lastActivityAt: number;
@@ -240,30 +244,32 @@ interface Turn {
 
   N6 depends on the 256 MB worker heap cap (without it 557–625 MB) and on **prune-on-replay**: tool payloads (`resultDetails`, `toolSpecificData`) and `result.metadata` are dropped right after each line's `JSON.parse`, or at string level for lines > 256 KB.
 - R5.2 – Fallbacks, in order: `@sqlite.org/sqlite-wasm` (in-memory + export; it works but N6 fails at 50k turns with 4.3 GB RSS); `wa-sqlite` with a file-backed VFS. A custom FTS5 `sql.js` build is not recommended. The storage layer stays behind an `IndexStore` interface.
+- R5.18 – Parsing and indexing run in the worker with `resourceLimits.maxOldGenerationSizeMb = 256` (required for N6, spike S2). If the worker dies with `ERR_WORKER_OUT_OF_MEMORY`, the file being parsed is marked `failed`, the worker is restarted, and indexing continues with the next file.
 
 ### 5.2 Storage
 
-- Index DB file: `<globalStorageUri>/index.sqlite` (per VS Code installation; shared by all windows).
-- R5.3 – Only one window writes the index at a time: a lock file `<globalStorageUri>/index.lock` (PID + heartbeat, stale after 30 s). Other windows open read-only and reload on change.
-- R5.4 – Persist after an indexing batch completes, debounced (≥ 5 s), atomically (write temp file → rename).
+- Index DB file: `<globalStorageUri>/index.sqlite` (per VS Code installation; shared by all windows), WAL journal mode.
+- R5.3 – Only one window writes the index at a time: a lock file `<globalStorageUri>/index.lock` (PID + heartbeat every 10 s, stale after 30 s). Other windows open the same file with `readOnly: true` and see committed data through WAL, so no reload is needed; they refresh their views when `PRAGMA data_version` changes and take over the lock when it becomes stale.
+- R5.4 – Persistence: each indexing batch is one WAL transaction, durable on commit (no export, no debounce). A cold build or rebuild writes `<globalStorageUri>/index.sqlite.build` (rollback journal, no WAL) while the old index stays usable, then publishes it into `index.sqlite` in one step with SQLite's online backup API (`node:sqlite` `backup()`), which readers see atomically, and deletes the build file. The build file is not renamed over `index.sqlite`, because renaming over a database that other windows have open (with live `-wal`/`-shm` files) can corrupt it, and fails on Windows.
 - R5.5 – File permissions `0600`.
 
 ### 5.3 Schema
 
 ```sql
-CREATE TABLE meta      (key TEXT PRIMARY KEY, value TEXT);          -- schemaVersion, parserVersion
+CREATE TABLE meta      (key TEXT PRIMARY KEY, value TEXT);  -- schemaVersion, parserVersion, indexConfig, noisePatterns
 CREATE TABLE workspaces(id TEXT PRIMARY KEY, source TEXT, name TEXT, uri TEXT);
 CREATE TABLE files     (path TEXT PRIMARY KEY, source TEXT, workspace_id TEXT,
                         mtime INTEGER, size INTEGER, parser_version INTEGER,
-                        status TEXT, error TEXT);
-CREATE TABLE sessions  (id TEXT PRIMARY KEY, file_path TEXT, source TEXT, workspace_id TEXT,
-                        title TEXT, created_at INTEGER, last_at INTEGER,
+                        session_key TEXT, status TEXT, error TEXT);  -- status: ok | empty | duplicate | failed
+CREATE TABLE sessions  (key TEXT PRIMARY KEY,                        -- '<source>:<sessionId>' (R5.19)
+                        id TEXT, file_path TEXT, source TEXT, workspace_id TEXT,
+                        title TEXT, custom_title INTEGER, created_at INTEGER, last_at INTEGER,
                         turn_count INTEGER, prompt_count INTEGER, noise_count INTEGER,
                         canceled_count INTEGER, tool_call_count INTEGER,
                         prompt_tokens INTEGER, completion_tokens INTEGER,
                         credits REAL, elapsed_ms INTEGER, size_bytes INTEGER,
                         primary_model TEXT, primary_mode TEXT);
-CREATE TABLE turns     (id INTEGER PRIMARY KEY, session_id TEXT, idx INTEGER, ts INTEGER,
+CREATE TABLE turns     (id INTEGER PRIMARY KEY, session_key TEXT, idx INTEGER, ts INTEGER,
                         model TEXT, mode TEXT, prompt_tokens INTEGER, completion_tokens INTEGER,
                         credits REAL, elapsed_ms INTEGER, hidden INTEGER, canceled INTEGER, noise INTEGER);
 CREATE TABLE turn_tools(turn_id INTEGER, tool TEXT, count INTEGER);
@@ -277,15 +283,20 @@ CREATE VIRTUAL TABLE turn_fts USING fts5(
 );
 CREATE VIRTUAL TABLE turn_vocab USING fts5vocab(turn_fts, 'row');    -- for fuzzy / suggestions
 CREATE INDEX ix_sessions_ws  ON sessions(workspace_id, last_at);
-CREATE INDEX ix_turns_session ON turns(session_id, idx);
+CREATE INDEX ix_turns_session ON turns(session_key, idx);
+CREATE INDEX ix_turn_tools   ON turn_tools(turn_id);
+CREATE INDEX ix_files_session ON files(session_key);
 ```
+
+Workspace ids are `<source>:<storage hash>` or `<source>:empty-window`, so Stable and Insiders never collide. The session title is stored in every turn's `title` column, so a query can combine a title term with a term from any turn.
 
 ### 5.4 Text processing
 
 - R5.6 – Tokenizer `unicode61` with `remove_diacritics 2` → `členů` matches `clenu`; case-insensitive.
 - R5.7 – Identifier splitting: for every token matching `[A-Za-z][A-Za-z0-9]*([A-Z_][a-z0-9]+)+` (camelCase, PascalCase, snake_case) the split parts are appended to the hidden `aux` column (`parseJsonLine` → `parse json line`). `aux` is never shown in snippets.
 - R5.8 – File paths in `files`: full path + basename + basename without extension (so `parser-vscode.ts`, `parser-vscode`, `parser`, `vscode` all match).
-- R5.9 – Tool calls in `tools`: tool name + compact args (paths, queries, commands), max 2 KB per call.
+- R5.9 – Tool calls in `tools`: tool name + compact args (paths, queries, commands, terminal command line), max 2 KB per call.
+- R5.9a – Thinking text is indexed only when `searchie.index.includeThinking` is on; it is then appended to the hidden `aux` column (searchable, never shown in snippets).
 - R5.10 – Noise prompts (adapted from Searchie prototype `isNoise`) are indexed with `noise = 1` and penalized in ranking (§6.3); they never become session titles. A prompt is noise when its trimmed text matches any of:
   - continue / retry / confirm phrases, optionally prefixed by `@agent`: `continue`, `try again`, `retry`, `stop`, `cancel`, `abort`;
   - `y`, `n`, `yes`, `no`;
@@ -314,7 +325,8 @@ flowchart TD
 - R5.14 – File watching: `vscode.workspace.createFileSystemWatcher` with `RelativePattern` on each source root (`**/chatSessions/*.{jsonl,json}`, `**/events.jsonl`), debounced 2 s per file. Fallback poll every 5 min (`searchie.index.pollIntervalMinutes`).
 - R5.15 – Active session being written is re-indexed at most once per 10 s.
 - R5.16 – Batches of ≤ 250 sessions per transaction; progress reported to status bar (`$(sync~spin) Searchie: indexing 120/840`).
-- R5.17 – Command `Searchie: Rebuild Index` drops and rebuilds everything. Schema or parser version mismatch triggers it automatically.
+- R5.17 – Command `Searchie: Rebuild Index` drops and rebuilds everything. A schema or parser version mismatch, or a change of `searchie.index.includeThinking` / `searchie.index.maxTurnTextKB` (stored as `indexConfig` in `meta`), triggers it automatically. A change of `searchie.noisePatterns` only re-flags `turns.noise` from the stored prompts and recomputes non-custom titles and session counts.
+- R5.19 – **Duplicate session ids.** The same `sessionId` can exist as byte-identical copies in several `workspaceStorage` folders (spike S2: 24 ids × 2 extra copies, e.g. after a folder was reopened as a `.code-workspace`). Sessions are deduplicated by `(source, sessionId)`: the copy with the newest mtime is indexed (ties: the lexicographically first path), the others are kept in `files` with `status = 'duplicate'` and the same `session_key`. The session is listed under the winning copy's workspace; its tooltip names the other workspaces, and a window whose workspace holds any copy counts as the session's own workspace for §8. When the winning file is removed, the next copy is promoted.
 
 ---
 
@@ -406,9 +418,9 @@ Contains two views:
 - R7.1 – Grouping toggle: *Workspace → Date* (default), *Date → Workspace*, *Flat*.
 - R7.2 – Sort: last activity (default), created, prompts, credits.
 - R7.3 – Session item description: prompt count · primary model · mode · relative time. Tooltip (Markdown): title, workspace, source, created / last, turns, prompts, noise prompts, tool calls, top tools, tokens in/out, credits, duration, file size.
-- R7.4 – Current workspace group expanded and pinned first.
-- R7.5 – Inline actions: *Open in Chat*, *Preview*. Context menu: *Open in Chat*, *Preview*, *Open Workspace in New Window*, *Copy Session ID*, *Reveal Session File*, *Search in this Session*, *Search in this Workspace*.
-- R7.6 – View title actions: *Search*, *Open Search Panel*, *Statistics*, *Refresh*, *Filter* (source, model, mode, date range).
+- R7.4 – Current workspace group expanded and pinned first. The current workspace is `<current source>:<basename(dirname(context.storageUri))>`, or `<current source>:empty-window` in an empty window; the current source is `vscode-insiders` when `vscode.env.appName` contains `Insiders`, else `vscode`.
+- R7.5 – Inline actions: *Open in Chat*, *Preview*. Context menu: *Open in Chat*, *Preview*, *Open Workspace in New Window*, *Copy Session ID*, *Reveal Session File*, *Search in this Session*, *Search in this Workspace*. The two *Search in this …* actions open Quick Pick with an internal scope (session key or workspace id), shown in the Quick Pick title and removable with a title button; they add no query syntax.
+- R7.6 – View title actions: *Search*, *Open Search Panel*, *Statistics*, *Refresh*, *Filter* (source, model, mode, date range). *Filter* also offers *Group by* (R7.1) and *Sort by* (R7.2). Phase 1 ships *Search*, *Refresh* and *Filter*; *Open Search Panel* and *Statistics* come with Phase 2.
 
 **b) Index status (welcome / footer)**
 
@@ -422,7 +434,7 @@ Contains two views:
   - detail: best snippet (plain text, matched terms not highlightable in Quick Pick → shown in `«»`)
 - R7.9 – `matchOnDescription/Detail = false` (ranking comes from the index, not Quick Pick filtering).
 - R7.10 – Item buttons: *Preview*, *Open Workspace in New Window*. Enter = *Open* (§8).
-- R7.11 – Footer item "Open in Search Panel…" carries the current query to §7.3.
+- R7.11 – Footer item "Open in Search Panel…" carries the current query to §7.3 (Phase 2).
 - R7.12 – Pre-fill: selected text in the active editor, else last query.
 
 ### 7.3 Search Panel (webview, Preact + htm)
@@ -483,17 +495,17 @@ flowchart TD
   O --> Q[Searchie activates in new window\nreads pending request ≤ 60 s old] --> C
 ```
 
-- R8.1 – *Open in Chat* mechanism, confirmed by spike S1 ([spikes/S1-open-in-chat.md](spikes/S1-open-in-chat.md)) in VS Code 1.145.2. Calls don't throw on failure (an error editor is shown instead), so the session file must first be pre-checked in the current window's `chatSessions/` (sibling of `context.storageUri`). Order:
+- R8.1 – *Open in Chat* mechanism, confirmed by spike S1 ([spikes/S1-open-in-chat.md](spikes/S1-open-in-chat.md)) in VS Code 1.145.2. Calls don't throw on failure (an error editor is shown instead), so the session file must first be pre-checked in the current window's chat storage: `<dirname(context.storageUri)>/chatSessions/<id>.{jsonl,json}` in a folder/workspace window, or `<dirname(context.globalStorageUri)>/emptyWindowChatSessions/<id>.{jsonl,json}` in an empty window. Order:
   1. ✅ `vscode.open` on `vscode-chat-session://local/<base64url(sessionId), no padding>` (VS Code `LocalChatSessionUri.forSession`). Opens the session as a chat editor with full history. Available since VS Code 1.106.
   2. ✅ `workbench.action.chat.openSessionInEditorGroup` with argument `{ resource }`, if present in `getCommands(true)`.
   3. Fallback: read-only Preview. Offer *Pick in Chat history* as a convenience: open the Chat view, run `workbench.action.chat.pickAgentSession` (`workbench.action.chat.history` no longer exists), and copy the title to the clipboard. In S1 the pasted title did not narrow the picker, so this is not a reliable fallback.
-  - Copilot CLI sessions: `vscode.open` on `copilotcli:/<sessionId>` also opens them with history (S1). Extending R8.5 beyond Preview-only is an open decision.
+  - Copilot CLI sessions: `vscode.open` on `copilotcli:/<sessionId>` also opens them with history (S1); see R8.5.
 - R8.2 – The mechanism is isolated in `ChatOpener` with feature detection (`vscode.commands.getCommands`) so it can change with VS Code releases without touching the rest.
 - R8.3 – Other-workspace sessions always show the two-button choice (*Open read-only preview* / *Open workspace in new window*). Setting `searchie.open.otherWorkspaceDefault` = `ask` (default) | `preview` | `newWindow`.
-- R8.4 – Empty-window sessions: *Open in new empty window* replaces *Open workspace*.
-- R8.5 – CLI sessions: Preview only; additional action *Copy resume command* `copilot --resume=<sessionId>` (syntax confirmed in S3 from the public CLI reference).
+- R8.4 – Empty-window sessions: *Open in new empty window* replaces *Open workspace*. In an empty window, empty-window sessions of the same source are same-workspace sessions (R8.1 pre-check in `emptyWindowChatSessions/`).
+- R8.5 – CLI sessions (Phase 2): *Open in Chat* via `vscode.open` on `copilotcli:/<sessionId>` when the GitHub Copilot Chat extension is active and the session has no `inuse.*.lock` file (never attach to a live CLI session); otherwise Preview. Always available: *Preview* and *Copy resume command* `copilot --resume=<sessionId>` (syntax confirmed in S3 from the public CLI reference).
 - R8.6 – Insiders sessions opened from Stable (or vice versa): Preview only.
-- R8.7 – Pending-open request file: `{ sessionId, workspaceUri, createdAt }`, deleted after use, ignored if older than 60 s or workspace mismatch.
+- R8.7 – Pending-open request file: `{ sessionId, workspaceUri, createdAt }`, deleted after use, ignored if older than 60 s or workspace mismatch. Every window watches the file, so a window that already has the target workspace open (VS Code focuses it instead of opening a new one) also consumes the request.
 - R8.8 – Activation: `onStartupFinished` (needed for R8.7 and background indexing) plus command / view activation events.
 
 ---
@@ -508,7 +520,7 @@ flowchart TD
 | Turns | Count of request/response pairs (incl. canceled, excl. hidden) |
 | Prompts | Turns with non-empty user message, not hidden |
 | Meaningful prompts | Prompts that are not noise |
-| Canceled | Turns with `isCanceled` |
+| Canceled | Turns with `modelState.value === 2` (CLI: `abort` event) |
 | Tool calls | Count of `toolInvocationSerialized` parts |
 | Prompt tokens / Completion tokens | Sum of `promptTokens` / `completionTokens` where present |
 | Credits | Sum of `copilotCredits` where present (shown as recorded by VS Code; no own pricing) |
@@ -577,7 +589,7 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 |---|---|---|---|
 | `searchie.sources.vscode` | boolean | `true` | Index VS Code Stable |
 | `searchie.sources.vscodeInsiders` | boolean | `true` | Index VS Code Insiders |
-| `searchie.sources.copilotCli` | boolean | `true` | Index Copilot CLI |
+| `searchie.sources.copilotCli` | boolean | `true` | Index Copilot CLI (Phase 2) |
 | `searchie.sources.emptyWindow` | boolean | `true` | Index empty-window sessions |
 | `searchie.additionalSessionRoots` | string[] | `[]` | Extra VS Code user dirs / CLI dirs |
 | `searchie.excludeWorkspaces` | string[] | `[]` | Glob patterns on workspace path |
@@ -586,7 +598,7 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 | `searchie.index.pollIntervalMinutes` | number | `5` | Fallback poll; `0` = off |
 | `searchie.search.defaultScope` | `all` \| `currentWorkspace` | `all` | Default search scope |
 | `searchie.search.recencyBoost` | number | `0.2` | $\beta$ in §6.3 |
-| `searchie.search.autoFuzzy` | boolean | `false` | Auto fuzzy when few results |
+| `searchie.search.autoFuzzy` | boolean | `false` | Auto fuzzy when few results (Phase 2) |
 | `searchie.search.maxResults` | number | `50` | Sessions per page |
 | `searchie.open.otherWorkspaceDefault` | `ask` \| `preview` \| `newWindow` | `ask` | §8 |
 | `searchie.tree.groupBy` | `workspaceDate` \| `dateWorkspace` \| `flat` | `workspaceDate` | §7.1 |
@@ -598,13 +610,16 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 | Command ID | Title | Default keybinding |
 |---|---|---|
 | `searchie.search` | Searchie: Search Sessions | `Cmd+Alt+Shift+F` / `Ctrl+Alt+Shift+F` |
-| `searchie.openSearchPanel` | Searchie: Open Search Panel | – |
+| `searchie.openSearchPanel` | Searchie: Open Search Panel (Phase 2) | – |
 | `searchie.searchInWorkspace` | Searchie: Search Sessions in Current Workspace | – |
-| `searchie.showStatistics` | Searchie: Show Statistics | – |
+| `searchie.searchInSession` | Searchie: Search in this Session (tree context menu) | – |
+| `searchie.filterSessions` | Searchie: Filter Sessions… (incl. group by / sort by) | – |
+| `searchie.showStatistics` | Searchie: Show Statistics (Phase 2) | – |
 | `searchie.openInChat` | Searchie: Open Session in Chat | – |
 | `searchie.preview` | Searchie: Preview Session | – |
 | `searchie.openWorkspaceInNewWindow` | Searchie: Open Session Workspace in New Window | – |
 | `searchie.copySessionId` | Searchie: Copy Session ID | – |
+| `searchie.copyResumeCommand` | Searchie: Copy Resume Command (CLI, Phase 2) | – |
 | `searchie.revealSessionFile` | Searchie: Reveal Session File | – |
 | `searchie.refresh` | Searchie: Refresh Index | – |
 | `searchie.rebuildIndex` | Searchie: Rebuild Index | – |
@@ -634,7 +649,7 @@ flowchart LR
     RPC --> QRY[QueryEngine]
     RPC --> AGG[StatsEngine]
     IDX --> PARSE[Parsers: vscode, cli]
-    IDX & QRY & AGG --> STORE[(IndexStore: sql.js FTS5)]
+    IDX & QRY & AGG --> STORE[(IndexStore: node:sqlite FTS5, WAL)]
   end
   SVC <-->|typed messages| RPC
 ```
@@ -647,7 +662,7 @@ searchie/
 │  ├─ ui/                 # tree, quick pick, status bar
 │  ├─ webview/            # Preact apps: search, preview, stats + RPC
 │  ├─ worker/             # worker entry, RPC, Indexer, QueryEngine, StatsEngine
-│  ├─ store/              # IndexStore interface + sql.js implementation, schema, migrations
+│  ├─ store/              # IndexStore interface + node:sqlite implementation, schema, migrations
 │  ├─ query/              # query parser (AST), FTS expression builder, fuzzy
 │  ├─ core/
 │  │  ├─ model.ts         # SessionMeta, Turn (zod)
@@ -657,7 +672,7 @@ searchie/
 │  │  ├─ text.ts          # identifier split, path expand, noise
 │  │  └─ vendor/  # copied code
 │  └─ test/fixtures/      # anonymized session files
-├─ esbuild.mjs            # bundles: extension, worker, webviews; copies sql-wasm.wasm
+├─ esbuild.mjs            # bundles: extension, worker, webviews; `node:sqlite` stays external (no WASM asset)
 ├─ vitest.config.mts
 ├─ THIRD_PARTY_NOTICES.md
 ├─ SPEC.md
@@ -666,11 +681,11 @@ searchie/
 
 ### 13.1 Build and quality
 
-- TypeScript strict, ES2022, esbuild bundles (`extension`, `worker`, `webview-search`, `webview-preview`, `webview-stats`).
+- TypeScript strict, ES2022, esbuild bundles (`extension`, `worker`, `webview-search`, `webview-stats` from Phase 2, `webview-preview`). `node:sqlite` is a Node built-in and stays external.
 - Vitest unit tests; coverage ≥ 80% for `core/`, `query/`, `store/`.
-- `@vscode/test-electron` smoke tests: activation, tree populated from fixtures, search command returns results.
-- ESLint (typescript-eslint, `no-unsanitized`), cspell, knip, husky + lint-staged (same as Searchie prototype).
-- Benchmark script `npm run bench` – indexes a directory, prints N2/N4/N6/N7 metrics.
+- `@vscode/test-electron` smoke tests on VS Code 1.106 and Stable: activation, tree populated from fixtures, search command returns results, `node:sqlite` loads in the worker.
+- ESLint (typescript-eslint, `no-unsanitized`). cspell, knip and husky + lint-staged (as in Searchie prototype) are deferred to Phase 3.
+- Benchmark script `npm run bench` – indexes a directory, prints N2/N3/N4/N6/N7 metrics.
 - CI: GitHub Actions – lint, test, build VSIX on macOS / Windows / Linux.
 
 ### 13.2 Test strategy
@@ -682,7 +697,7 @@ searchie/
 | Text processing | diacritics, camelCase/snake_case split, path expansion, noise detection |
 | Query parser | every syntax element, malformed input, injection attempts (`"`, `*`, `NEAR`, `)`), filter extraction |
 | Ranking | golden-query set over fixtures with expected top-3 |
-| Incremental index | add / modify / delete file, parser version bump |
+| Incremental index | add / modify / delete file, parser version bump, duplicate session ids (R5.19) |
 | Webview security | snippet escaping with `<script>` in content |
 | Stats | aggregates vs. hand-computed fixture values |
 
@@ -708,7 +723,7 @@ Search Panel, Statistics view, Copilot CLI source, fuzzy + suggestions, CSV expo
 
 ### Phase 3 – Public release
 
-Searchie prototype code reuse approval (R2.3), README, screenshots, icon, CHANGELOG, Marketplace publisher, cross-platform CI verification.
+Searchie prototype code reuse approval (R2.3), README, screenshots, icon, CHANGELOG, Marketplace publisher, cross-platform CI verification, cspell / knip / husky + lint-staged.
 
 ---
 
@@ -728,7 +743,7 @@ Searchie prototype code reuse approval (R2.3), README, screenshots, icon, CHANGE
 |---|---|---|
 | K1 | Session file format is internal and changes between VS Code versions | Isolated parsers, `PARSER_VERSION`, lenient zod, fixtures per version, diagnostics for unknown structures |
 | K2 | No stable API to open a chat session | Spike S1, `ChatOpener` feature detection, Preview fallback always available |
-| K3 | `sql.js` full in-memory DB and whole-file export may be too heavy for large histories | Spike S2, `IndexStore` abstraction, fallbacks (R5.2) |
+| K3 | `node:sqlite` is experimental in Node 22 (release candidate since Node 24.15); its API or availability in VS Code's runtime may change | `IndexStore` abstraction, smoke test on the minimum and current VS Code, fallbacks (R5.2) |
 | K4 | Concurrent windows writing the index | Single-writer lock (R5.3) |
 | K5 | Index contains sensitive content | Local only, `0600`, redaction on display, delete command |
 | K6 | Searchie prototype-derived code in a public repo | MIT notice + internal approval before Phase 3 |

@@ -1,0 +1,80 @@
+{
+ "version": 3,
+ "creationDate": 1768381200000,
+ "initialLocation": "panel",
+ "responderUsername": "GitHub Copilot",
+ "sessionId": "22222222-2222-4222-8222-222222222222",
+ "requests": [
+  {
+   "requestId": "request_00000000",
+   "timestamp": 1768381200000,
+   "agent": {
+    "extensionId": {
+     "value": "GitHub.copilot-chat",
+     "_lower": "github.copilot-chat"
+    },
+    "extensionVersion": "0.0.0",
+    "publisherDisplayName": "GitHub",
+    "extensionPublisherId": "GitHub",
+    "extensionDisplayName": "GitHub Copilot Chat",
+    "id": "github.copilot.editsAgent",
+    "description": "Edit files in your workspace in agent mode",
+    "when": "true"
+   },
+   "modelId": "copilot/gpt-6.1-sol",
+   "message": {
+    "text": "Explain the sample build script.",
+    "parts": [
+     {
+      "range": {
+       "start": 0,
+       "endExclusive": 32
+      },
+      "editorRange": {
+       "startLineNumber": 1,
+       "startColumn": 1,
+       "endLineNumber": 1,
+       "endColumn": 33
+      },
+      "text": "Explain the sample build script.",
+      "kind": "text"
+     }
+    ]
+   },
+   "variableData": {
+    "variables": []
+   },
+   "response": [
+    {
+     "value": "Placeholder explanation of the build script."
+    }
+   ],
+   "responseId": "response_00000000",
+   "responseTimestamp": 1768381201000,
+   "modelState": {
+    "value": 1
+   },
+   "contentReferences": [],
+   "codeCitations": [],
+   "timeSpentWaiting": 0,
+   "modeInfo": {
+    "kind": "agent",
+    "isBuiltin": true,
+    "telemetryModeId": "agent",
+    "telemetryModeName": "Agent",
+    "permissionLevel": "default"
+   },
+   "hiddenFromTranscript": false,
+   "result": {
+    "timings": {
+     "totalElapsed": 2100
+    }
+   }
+  }
+ ],
+ "inputState": {
+  "mode": {
+   "id": "ask"
+  }
+ }
+}

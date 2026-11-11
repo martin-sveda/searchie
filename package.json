@@ -85,7 +85,7 @@
       },
       {
         "command": "searchie.filterSessions",
-        "title": "Filter Sessions\u2026",
+        "title": "Filter Sessions…",
         "category": "Searchie",
         "icon": "$(filter)"
       },
@@ -111,6 +111,12 @@
         "command": "searchie.copySessionId",
         "title": "Copy Session ID",
         "category": "Searchie"
+      },
+      {
+        "command": "searchie.copyResumeCommand",
+        "title": "Copy Resume Command",
+        "category": "Searchie",
+        "icon": "$(terminal)"
       },
       {
         "command": "searchie.revealSessionFile",
@@ -180,7 +186,7 @@
         },
         {
           "command": "searchie.openWorkspaceInNewWindow",
-          "when": "view == searchie.sessions && viewItem =~ /^session/",
+          "when": "view == searchie.sessions && viewItem == session",
           "group": "1_open@3"
         },
         {
@@ -189,9 +195,14 @@
           "group": "2_copy@1"
         },
         {
+          "command": "searchie.copyResumeCommand",
+          "when": "view == searchie.sessions && viewItem == session.cli",
+          "group": "2_copy@2"
+        },
+        {
           "command": "searchie.revealSessionFile",
           "when": "view == searchie.sessions && viewItem =~ /^session/",
-          "group": "2_copy@2"
+          "group": "2_copy@3"
         },
         {
           "command": "searchie.searchInSession",
@@ -233,6 +244,12 @@
           "scope": "application",
           "description": "Index chat sessions of VS Code Insiders."
         },
+        "searchie.sources.copilotCli": {
+          "type": "boolean",
+          "default": true,
+          "scope": "application",
+          "markdownDescription": "Index Copilot CLI sessions from `~/.copilot/session-state` (and the legacy `history-session-state`). Searchie only reads them."
+        },
         "searchie.sources.emptyWindow": {
           "type": "boolean",
           "default": true,
@@ -246,7 +263,7 @@
           },
           "default": [],
           "scope": "application",
-          "markdownDescription": "Extra VS Code `User/` directories to index (WSL, dev containers, remote homes). A path containing `insiders` is treated as VS Code Insiders."
+          "markdownDescription": "Extra session roots to index (WSL, dev containers, remote homes): VS Code `User/` directories (a path containing `insiders` is treated as VS Code Insiders) or Copilot CLI roots (`…/session-state`, `…/history-session-state`, or a `.copilot` directory)."
         },
         "searchie.excludeWorkspaces": {
           "type": "array",
@@ -296,7 +313,7 @@
           "default": 0.2,
           "minimum": 0,
           "maximum": 5,
-          "description": "Boost for recent turns in ranking (\u03b2 in SPEC \u00a76.3). 0 turns it off."
+          "description": "Boost for recent turns in ranking (β in SPEC §6.3). 0 turns it off."
         },
         "searchie.search.maxResults": {
           "type": "number",
@@ -360,7 +377,7 @@
           },
           "default": [],
           "scope": "application",
-          "markdownDescription": "Extra noise-prompt patterns: case-insensitive regular expressions matched against the whole trimmed prompt (e.g. `pokra\u010duj`). Noise prompts rank lower and never become titles."
+          "markdownDescription": "Extra noise-prompt patterns: case-insensitive regular expressions matched against the whole trimmed prompt (e.g. `pokračuj`). Noise prompts rank lower and never become titles."
         }
       }
     }

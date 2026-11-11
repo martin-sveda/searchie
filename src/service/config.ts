@@ -12,6 +12,7 @@ export function indexerSettings(): IndexerSettings {
   return {
     vscode: c.get<boolean>('sources.vscode', true),
     vscodeInsiders: c.get<boolean>('sources.vscodeInsiders', true),
+    copilotCli: c.get<boolean>('sources.copilotCli', true),
     emptyWindow: c.get<boolean>('sources.emptyWindow', true),
     additionalSessionRoots: strings(c.get('additionalSessionRoots')),
     excludeWorkspaces: strings(c.get('excludeWorkspaces')),

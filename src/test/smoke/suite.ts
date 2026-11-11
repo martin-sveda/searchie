@@ -58,19 +58,25 @@ export async function run(): Promise<void> {
   results.activationMs = Math.round(api.activationMs * 10) / 10;
 
   await api.service.start();
-  const status = await waitFor(() => api.service.currentStatus, (s) => s.state === 'idle' && s.sessions === 3);
+  const status = await waitFor(() => api.service.currentStatus, (s) => s.state === 'idle' && s.sessions === 4);
   results.indexedSessions = status.sessions;
   results.role = status.role;
 
   const sessions = await collectSessions(api);
-  assert(sessions.length === 3, `tree shows 3 sessions (got ${sessions.length})`);
+  assert(sessions.length === 4, `tree shows 4 sessions incl. the CLI fixture (got ${sessions.length})`);
   const top = await api.tree.getChildren();
   assert(top.some((n) => n.kind === 'summary'), 'tree has a summary node');
+  const merged = top.find((n) => n.kind === 'workspace' && n.group.sources.includes('copilot-cli') && n.group.sources.includes('vscode'));
+  assert(merged, 'VS Code and CLI sessions of one folder share a tree group (R7.27)');
+  results.folderGroup = 'ok';
   results.treeSessions = sessions.length;
 
   const found = await api.service.search({ query: 'clenu' });
   assert(found.results.length === 1 && found.results[0]!.session.id === MAIN_ID, 'search finds the diacritics fixture');
   results.searchHits = found.results.length;
+  const cli = await api.service.search({ query: 'src:cli parseJsonLine' });
+  assert(cli.results.length === 1 && cli.results[0]!.session.source === 'copilot-cli', 'search finds the CLI fixture');
+  results.cliSearchHits = cli.results.length;
 
   // The searchie.search command end to end: Quick Pick with a query, accept the first item.
   const opened = new Promise<SessionListItem>((resolve) => {
@@ -78,7 +84,7 @@ export async function run(): Promise<void> {
       resolve(s);
       return Promise.resolve();
     };
-    api.setActions({ open: record, preview: record, openWorkspaceInNewWindow: record });
+    api.setActions({ open: record, preview: record, openWorkspaceInNewWindow: record, copyResumeCommand: record });
   });
   void vscode.commands.executeCommand('searchie.search', { query: 'parser' });
   await new Promise((r) => setTimeout(r, 1500));

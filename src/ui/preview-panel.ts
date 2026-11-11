@@ -11,11 +11,20 @@ import { UNTITLED } from './format';
 
 /** Read-only session Preview (R7.21–R7.25) as a webview editor tab. */
 
+export interface OpenActions {
+  canOpenInChat: boolean;
+  canOpenNewWindow: boolean;
+  openInChatLabel: string;
+  newWindowLabel: string;
+  canCopyResume: boolean;
+}
+
 export interface PreviewHost {
   /** Label and availability of the primary action (§8): Open in Chat, or the other-workspace variant. */
-  openActions(session: SessionListItem): Promise<{ canOpenInChat: boolean; canOpenNewWindow: boolean; openInChatLabel: string; newWindowLabel: string }>;
+  openActions(session: SessionListItem): Promise<OpenActions>;
   openInChat(session: SessionListItem): Promise<void>;
   openWorkspaceInNewWindow(session: SessionListItem): Promise<void>;
+  copyResumeCommand(session: SessionListItem): Promise<void>;
 }
 
 const nonce = (): string => randomBytes(16).toString('base64');
@@ -109,6 +118,9 @@ class PreviewPanel {
         return;
       case 'copySessionId':
         await vscode.env.clipboard.writeText(this.session.id);
+        return;
+      case 'copyResumeCommand':
+        await this.host.copyResumeCommand(this.session);
         return;
     }
   }

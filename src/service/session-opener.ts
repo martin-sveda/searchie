@@ -1,7 +1,11 @@
+import path from 'node:path';
 import * as vscode from 'vscode';
+import { isCliSessionLive, isInside, resumeCommand } from '../core/cli-sources';
 import { EMPTY_WINDOW, SOURCE_LABELS } from '../core/ids';
+import { resolveCliRoots } from '../core/sources';
+import { pidAlive } from '../store/lock';
 import type { SessionListItem } from '../store/index-db';
-import type { PreviewHost, PreviewManager } from '../ui/preview-panel';
+import type { OpenActions, PreviewHost, PreviewManager } from '../ui/preview-panel';
 import { UNTITLED } from '../ui/format';
 import { ChatOpener } from './chat-opener';
 import { uiSettings } from './config';
@@ -9,9 +13,15 @@ import { consumePendingOpen, PENDING_FILE, writePendingOpen } from './pending-op
 import type { SearchieService } from './searchie-service';
 import type { PreviewOptions, SessionActions } from './session-actions';
 
-/** The §8 flow: Open in Chat, other-workspace choice, empty window, Insiders↔Stable, pending-open (R8.1–R8.7). */
+/** The §8 flow: Open in Chat, other-workspace choice, empty window, Insiders↔Stable, Copilot CLI, pending-open (R8.1–R8.7). */
 
 const isEmptyWindowSession = (s: SessionListItem): boolean => s.workspaceId.endsWith(`:${EMPTY_WINDOW}`);
+const isCli = (s: SessionListItem): boolean => s.source === 'copilot-cli';
+
+/** The default `~/.copilot` roots: only there can the `inuse.<pid>.lock` pid be checked (R8.5). */
+function defaultCliRootDirs(): string[] {
+  return resolveCliRoots({ vscode: false, vscodeInsiders: false, copilotCli: true, emptyWindow: false, additionalSessionRoots: [], excludeWorkspaces: [] }).map((r) => r.dir);
+}
 
 export class SessionOpener implements SessionActions, PreviewHost, vscode.Disposable {
   private readonly chat: ChatOpener;
@@ -35,15 +45,59 @@ export class SessionOpener implements SessionActions, PreviewHost, vscode.Dispos
     return isEmptyWindowSession(s) ? 'Open in New Empty Window' : 'Open Workspace in New Window';
   }
 
-  openActions(s: SessionListItem): Promise<{ canOpenInChat: boolean; canOpenNewWindow: boolean; openInChatLabel: string; newWindowLabel: string }> {
+  /** R8.5 – live = an `inuse.<pid>.lock` with a running pid (default roots) or any lock (additional roots). */
+  private async isCliLive(s: SessionListItem): Promise<boolean> {
+    const meta = await this.service.sessionMeta(s.key);
+    if (!meta) return false;
+    const dir = path.dirname(meta.filePath);
+    return isCliSessionLive(dir, defaultCliRootDirs().some((root) => isInside(dir, root)), pidAlive);
+  }
+
+  async openActions(s: SessionListItem): Promise<OpenActions> {
+    if (isCli(s)) {
+      return {
+        canOpenInChat: this.chat.cliChatAvailable() && !(await this.isCliLive(s)),
+        canOpenNewWindow: false,
+        openInChatLabel: 'Open in Chat',
+        newWindowLabel: '',
+        canCopyResume: resumeCommand(s.id) !== undefined,
+      };
+    }
     const local = this.isLocal(s);
     const sameApp = s.source === this.service.window.source;
-    return Promise.resolve({
+    return {
       canOpenInChat: local,
       canOpenNewWindow: sameApp && !local && (isEmptyWindowSession(s) || s.workspaceUri !== undefined),
       openInChatLabel: 'Open in Chat',
       newWindowLabel: this.newWindowLabel(s),
-    });
+      canCopyResume: false,
+    };
+  }
+
+  async copyResumeCommand(s: SessionListItem): Promise<void> {
+    const cmd = isCli(s) ? resumeCommand(s.id) : undefined;
+    if (!cmd) {
+      void vscode.window.showInformationMessage('Searchie: Copy Resume Command is available for Copilot CLI sessions only.');
+      return;
+    }
+    await vscode.env.clipboard.writeText(cmd);
+    this.service.log.info(`copied resume command for ${s.id}`);
+    void vscode.window.setStatusBarMessage('Searchie: resume command copied', 3000);
+  }
+
+  /** R8.5 – idle CLI sessions open in Chat from any window; live ones, or without Copilot Chat, as a preview. */
+  private async openCli(s: SessionListItem): Promise<void> {
+    const live = await this.isCliLive(s);
+    if (!live && (await this.chat.openCli(s.id, uiSettings().chatLocation)) === 'opened') return;
+    await this.preview(s);
+    const reason = live
+      ? 'This Copilot CLI session is in use in a terminal'
+      : this.chat.cliChatAvailable()
+        ? 'Copilot Chat could not open this Copilot CLI session'
+        : 'Opening Copilot CLI sessions in Chat needs the GitHub Copilot Chat extension';
+    this.service.log.info(`CLI session ${s.id} shown as preview (${live ? 'live' : 'not opened'})`);
+    const copy = 'Copy Resume Command';
+    if ((await vscode.window.showInformationMessage(`${reason}; it is shown as a read-only preview.`, copy)) === copy) await this.copyResumeCommand(s);
   }
 
   preview(s: SessionListItem, options?: PreviewOptions): Promise<void> {
@@ -51,6 +105,7 @@ export class SessionOpener implements SessionActions, PreviewHost, vscode.Dispos
   }
 
   async openInChat(s: SessionListItem): Promise<void> {
+    if (isCli(s)) return this.openCli(s);
     if ((await this.chat.open(s.id, uiSettings().chatLocation)) === 'opened') return;
     await this.preview(s);
     const pick = await vscode.window.showInformationMessage(
@@ -61,6 +116,7 @@ export class SessionOpener implements SessionActions, PreviewHost, vscode.Dispos
   }
 
   async open(s: SessionListItem): Promise<void> {
+    if (isCli(s)) return this.openCli(s);
     if (this.isLocal(s)) {
       await this.openInChat(s);
       return;
@@ -89,6 +145,7 @@ export class SessionOpener implements SessionActions, PreviewHost, vscode.Dispos
 
   /** R8.4, R8.7 – write the pending-open request, then open the workspace (or an empty window) in a new window. */
   async openWorkspaceInNewWindow(s: SessionListItem): Promise<void> {
+    if (isCli(s)) return this.openCli(s);
     if (s.source !== this.service.window.source) {
       await this.preview(s);
       void vscode.window.showInformationMessage(`This session belongs to ${SOURCE_LABELS[s.source] ?? s.source}; open it there. Here it is shown as a read-only preview.`);

@@ -19,6 +19,14 @@ export function localChatSessionUri(sessionId: string): vscode.Uri {
   return vscode.Uri.from({ scheme: CHAT_SESSION_SCHEME, authority: 'local', path: `/${Buffer.from(sessionId, 'utf8').toString('base64url')}` });
 }
 
+export const CLI_SESSION_SCHEME = 'copilotcli';
+export const COPILOT_CHAT_EXTENSION = 'github.copilot-chat';
+
+/** R8.5 – `copilotcli:/<sessionId>`, served by the GitHub Copilot Chat extension. */
+export function cliSessionUri(sessionId: string): vscode.Uri {
+  return vscode.Uri.from({ scheme: CLI_SESSION_SCHEME, path: `/${sessionId}` });
+}
+
 export type OpenResult = 'opened' | 'unavailable';
 
 export class ChatOpener {
@@ -68,6 +76,32 @@ export class ChatOpener {
         this.log.info(`moved ${sessionId} into the Chat view`);
       } catch (e) {
         this.log.warn(`moving ${sessionId} into the Chat view failed (${(e as Error).name}); it stays as an editor`);
+      }
+    }
+    return 'opened';
+  }
+
+  /** R8.5 – the CLI chat editor is provided by the GitHub Copilot Chat extension; it must be active. */
+  cliChatAvailable(): boolean {
+    return vscode.extensions.getExtension(COPILOT_CHAT_EXTENSION)?.isActive === true;
+  }
+
+  /** R8.5 – opens an idle Copilot CLI session in a chat editor; the caller has checked that it is not live. */
+  async openCli(sessionId: string, location: 'view' | 'editor' = 'view'): Promise<OpenResult> {
+    if (!/^[\w.-]+$/.test(sessionId) || !this.cliChatAvailable()) return 'unavailable';
+    try {
+      await vscode.commands.executeCommand('vscode.open', cliSessionUri(sessionId));
+      this.log.info(`opened CLI session ${sessionId} as chat editor`);
+    } catch (e) {
+      this.log.warn(`vscode.open failed for CLI session ${sessionId} (${(e as Error).name})`);
+      return 'unavailable';
+    }
+    if (location === 'view' && (await this.available()).has(MOVE_TO_VIEW_COMMAND)) {
+      try {
+        await vscode.commands.executeCommand(MOVE_TO_VIEW_COMMAND);
+        this.log.info(`moved CLI session ${sessionId} into the Chat view`);
+      } catch (e) {
+        this.log.warn(`moving CLI session ${sessionId} into the Chat view failed (${(e as Error).name}); it stays as an editor`);
       }
     }
     return 'opened';

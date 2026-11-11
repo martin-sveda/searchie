@@ -60,6 +60,7 @@ export const HostToWebviewSchema = z.discriminatedUnion('type', [
     canOpenNewWindow: z.boolean(),
     openInChatLabel: z.string(),
     newWindowLabel: z.string(),
+    canCopyResume: z.boolean(),
   }),
   z.object({ type: z.literal('reveal'), terms, scrollTo: z.optional(z.int()) }),
   z.object({ type: z.literal('error'), message: z.string() }),
@@ -74,5 +75,6 @@ export const WebviewToHostSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('openInChat') }),
   z.object({ type: z.literal('openNewWindow') }),
   z.object({ type: z.literal('copySessionId') }),
+  z.object({ type: z.literal('copyResumeCommand') }),
 ]);
 export type WebviewToHost = z.infer<typeof WebviewToHostSchema>;

@@ -70,13 +70,37 @@ describe('tree model', () => {
   });
 
   it('pins the current workspace and orders the rest by last activity (R7.4)', () => {
-    const groups = groupByWorkspace([s('a', 'vscode:x', NOW - DAY), s('b', 'vscode:y', NOW - HOUR), s('c', 'vscode:cur', NOW - 10 * DAY), s('d', 'vscode:y', NOW)], new Set(['vscode:cur']), 'lastActivity');
+    const groups = groupByWorkspace([s('a', 'vscode:x', NOW - DAY), s('b', 'vscode:y', NOW - HOUR), s('c', 'vscode:cur', NOW - 10 * DAY), s('d', 'vscode:y', NOW)], { ids: new Set(['vscode:cur']) }, 'lastActivity');
     expect(groups.map((g) => [g.id, g.current, g.sessions.map((x) => x.key)])).toEqual([
       ['vscode:cur', true, ['c']],
       ['vscode:y', false, ['d', 'b']],
       ['vscode:x', false, ['a']],
     ]);
-    expect(workspaceLabel('searchie', 'vscode-insiders')).toBe('searchie (Insiders)');
+    expect(workspaceLabel('searchie', ['vscode-insiders'])).toBe('searchie (Insiders)');
+  });
+
+  it('merges workspaces of one folder across sources into one group (R7.27)', () => {
+    const F = '/home/user/app';
+    const cli = { source: 'copilot-cli' as const, folder: F, workspaceName: 'org/app' };
+    const groups = groupByWorkspace(
+      [
+        s('cli1', 'copilot-cli:h1', NOW, cli),
+        s('vs1', 'vscode:a', NOW - DAY, { folder: F, workspaceName: 'app' }),
+        s('ins1', 'vscode-insiders:b', NOW - 2 * DAY, { source: 'vscode-insiders', folder: F, workspaceName: 'app' }),
+        s('cli2', 'copilot-cli:h2', NOW - HOUR, { ...cli, folder: '/other', workspaceName: 'other' }),
+        s('e1', 'vscode:empty-window', NOW - 3 * DAY),
+        s('cli3', 'copilot-cli:no-folder', NOW - 4 * DAY, { source: 'copilot-cli', folder: undefined, workspaceName: 'No folder' }),
+      ],
+      { ids: new Set(['vscode:elsewhere']), folder: '/other' },
+      'lastActivity',
+    );
+    expect(groups.map((g) => [g.id, g.label, g.current, g.workspaceIds])).toEqual([
+      ['folder:/other', 'other (Copilot CLI)', true, ['copilot-cli:h2']],
+      [`folder:${F}`, 'app (VS Code, Insiders, Copilot CLI)', false, ['copilot-cli:h1', 'vscode:a', 'vscode-insiders:b']],
+      ['vscode:empty-window', 'empty-window (VS Code)', false, ['vscode:empty-window']],
+      ['copilot-cli:no-folder', 'No folder (Copilot CLI)', false, ['copilot-cli:no-folder']],
+    ]);
+    expect(groups[1]!.folder).toBe(F);
   });
 
   it('sorts by created, prompts and credits (R7.2)', () => {

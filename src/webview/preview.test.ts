@@ -104,7 +104,7 @@ describe('preview data', () => {
     expect(red.turns[0]!.parts.map((p) => p.kind)).toEqual(['thinking', 'tool', 'tool', 'markdown']);
     const raw = await buildPreviewData(loaded, false);
     expect(JSON.stringify(raw)).toContain(secret);
-    expect(HostToWebviewSchema.safeParse({ type: 'init', data: raw, terms: ['x'], redacted: false, canOpenInChat: true, canOpenNewWindow: false, openInChatLabel: 'a', newWindowLabel: 'b' }).success).toBe(true);
+    expect(HostToWebviewSchema.safeParse({ type: 'init', data: raw, terms: ['x'], redacted: false, canOpenInChat: true, canOpenNewWindow: false, openInChatLabel: 'a', newWindowLabel: 'b', canCopyResume: true }).success).toBe(true);
   });
 });
 

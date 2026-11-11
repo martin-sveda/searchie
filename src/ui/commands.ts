@@ -4,7 +4,7 @@ import { SOURCE_LABELS, type SourceId } from '../core/ids';
 import type { SessionListItem } from '../store/index-db';
 import type { SearchieService } from '../service/searchie-service';
 import type { SessionActions } from '../service/session-actions';
-import { defaultScope, showSearchQuickPick } from './quick-pick';
+import { currentScope, defaultScope, showSearchQuickPick } from './quick-pick';
 import { isSessionNode, type SessionsTreeProvider, type TreeNode } from './tree';
 import { type GroupBy, SORT_LABELS, type SortBy, type TreeFilter } from './tree-model';
 import { UNTITLED } from './format';
@@ -52,13 +52,19 @@ export function registerCommands(c: CommandContext): vscode.Disposable[] {
       return showSearchQuickPick(service, actions, state, { query, scope: defaultScope(service) });
     }),
     reg('searchie.searchInWorkspace', (arg?: unknown) => {
-      if (isSessionNode(arg)) return showSearchQuickPick(service, actions, state, { query: '', scope: { label: arg.session.workspaceName, workspaceId: arg.session.workspaceId } });
+      // R7.27 – a folder group scopes to every workspace with its folder key.
+      if (isSessionNode(arg)) {
+        const s = arg.session;
+        const scope = s.folder !== undefined ? { label: s.workspaceName, folder: s.folder } : { label: s.workspaceName, workspaceId: s.workspaceId };
+        return showSearchQuickPick(service, actions, state, { query: '', scope });
+      }
       const node = arg as TreeNode | undefined;
       if (node?.kind === 'workspace') {
-        const id = node.group.id.includes('/') ? node.group.id.slice(node.group.id.indexOf('/') + 1) : node.group.id;
-        return showSearchQuickPick(service, actions, state, { query: '', scope: { label: node.group.label, workspaceId: id } });
+        const g = node.group;
+        const scope = g.folder !== undefined ? { label: g.label, folder: g.folder } : { label: g.label, workspaceId: g.workspaceIds[0]! };
+        return showSearchQuickPick(service, actions, state, { query: '', scope });
       }
-      return showSearchQuickPick(service, actions, state, { scope: { label: 'current workspace', workspaceId: service.window.workspaceId } });
+      return showSearchQuickPick(service, actions, state, { scope: currentScope(service) });
     }),
     reg(
       'searchie.searchInSession',
@@ -68,6 +74,7 @@ export function registerCommands(c: CommandContext): vscode.Disposable[] {
     reg('searchie.openInChat', withSession((s) => actions.open(s))),
     reg('searchie.preview', withSession((s) => actions.preview(s))),
     reg('searchie.openWorkspaceInNewWindow', withSession((s) => actions.openWorkspaceInNewWindow(s))),
+    reg('searchie.copyResumeCommand', withSession((s) => actions.copyResumeCommand(s))),
     reg(
       'searchie.copySessionId',
       withSession(async (s) => {

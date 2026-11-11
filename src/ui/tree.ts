@@ -105,14 +105,14 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<TreeNode>, 
       const groupBy = uiSettings().groupBy;
       if (groupBy === 'flat') return [...top, ...[...sessions].sort(compareSessions(sort)).map((s) => ({ kind: 'session' as const, session: s }))];
       if (groupBy === 'dateWorkspace') return [...top, ...groupByDate(sessions, sort).map((g, i) => ({ kind: 'date' as const, bucket: g.bucket, sessions: g.sessions, expanded: i === 0 }))];
-      return [...top, ...groupByWorkspace(sessions, this.service.currentWorkspaceIds(), sort).map((group) => ({ kind: 'workspace' as const, group }))];
+      return [...top, ...groupByWorkspace(sessions, this.service.currentWorkspace(), sort).map((group) => ({ kind: 'workspace' as const, group }))];
     }
     if (node.kind === 'workspace') {
       return groupByDate(node.group.sessions, sort).map((g, i) => ({ kind: 'date', bucket: g.bucket, sessions: g.sessions, parent: node.group.id, expanded: node.group.current && i === 0 }));
     }
     if (node.kind === 'date') {
       if (node.parent || uiSettings().groupBy !== 'dateWorkspace') return node.sessions.map((s) => ({ kind: 'session', session: s }));
-      return groupByWorkspace(node.sessions, this.service.currentWorkspaceIds(), sort).map((group) => ({ kind: 'workspace', group: { ...group, id: `${node.bucket.id}/${group.id}` } }));
+      return groupByWorkspace(node.sessions, this.service.currentWorkspace(), sort).map((group) => ({ kind: 'workspace', group: { ...group, id: `${node.bucket.id}/${group.id}` } }));
     }
     return [];
   }
@@ -127,7 +127,7 @@ export class SessionsTreeProvider implements vscode.TreeDataProvider<TreeNode>, 
         const item = new vscode.TreeItem(node.group.label, node.group.current ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed);
         item.id = `ws:${node.group.id}`;
         item.description = plural(node.group.sessions.length, 'session');
-        item.iconPath = new vscode.ThemeIcon(node.group.id.endsWith('empty-window') ? 'empty-window' : node.group.current ? 'root-folder-opened' : 'root-folder');
+        item.iconPath = new vscode.ThemeIcon(node.group.id.endsWith(':empty-window') ? 'empty-window' : node.group.folder === undefined ? 'folder' : node.group.current ? 'root-folder-opened' : 'root-folder');
         item.contextValue = 'workspace';
         return item;
       }
@@ -199,7 +199,7 @@ function sessionItem(s: SessionListItem): vscode.TreeItem {
   item.id = `session:${s.key}`;
   item.description = sessionDescription(s);
   item.iconPath = new vscode.ThemeIcon(s.source === 'copilot-cli' ? 'terminal' : 'comment-discussion');
-  item.contextValue = 'session';
+  item.contextValue = s.source === 'copilot-cli' ? 'session.cli' : 'session';
   item.command = { command: 'searchie.preview', title: 'Preview Session', arguments: [{ kind: 'session', session: s }] };
   item.accessibilityInformation = { label: `${s.title || UNTITLED}, ${item.description}` };
   return item;

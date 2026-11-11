@@ -11,4 +11,6 @@ export interface SessionActions {
   open(session: SessionListItem): Promise<void>;
   preview(session: SessionListItem, options?: PreviewOptions): Promise<void>;
   openWorkspaceInNewWindow(session: SessionListItem): Promise<void>;
+  /** R8.5 – Copilot CLI sessions only: `copilot --resume=<id>` to the clipboard. */
+  copyResumeCommand(session: SessionListItem): Promise<void>;
 }

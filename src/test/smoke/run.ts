@@ -10,6 +10,7 @@ import { downloadAndUnzipVSCode, runTests } from '@vscode/test-electron';
 
 const ROOT = path.resolve(__dirname, '..', '..', '..');
 const FIXTURES = path.join(ROOT, 'src', 'test', 'fixtures', 'vscode');
+const CLI_FIXTURES = path.join(ROOT, 'src', 'test', 'fixtures', 'cli', 'session-state');
 
 function installedExecutable(): string {
   if (process.platform === 'darwin') return '/Applications/Visual Studio Code.app/Contents/MacOS/Code';
@@ -23,8 +24,12 @@ async function main(): Promise<void> {
   // Index a copy with equal mtimes: git doesn't preserve them, and the duplicate fixture copies must tie (R5.19).
   const fixtures = path.join(tmp, 'fixtures');
   fs.cpSync(FIXTURES, fixtures, { recursive: true });
+  const cliRoot = path.join(tmp, 'cli', 'session-state');
+  fs.cpSync(CLI_FIXTURES, cliRoot, { recursive: true });
   const fixed = new Date('2026-01-16T00:00:00Z');
-  for (const e of fs.readdirSync(fixtures, { withFileTypes: true, recursive: true })) if (e.isFile()) fs.utimesSync(path.join(e.parentPath, e.name), fixed, fixed);
+  for (const dir of [fixtures, cliRoot]) {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) if (e.isFile()) fs.utimesSync(path.join(e.parentPath, e.name), fixed, fixed);
+  }
   fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
   fs.writeFileSync(
     path.join(userData, 'User', 'settings.json'),
@@ -32,7 +37,9 @@ async function main(): Promise<void> {
       {
         'searchie.sources.vscode': false,
         'searchie.sources.vscodeInsiders': false,
-        'searchie.additionalSessionRoots': [fixtures],
+        // Never the real ~/.copilot: the CLI fixture comes in as an additional root.
+        'searchie.sources.copilotCli': false,
+        'searchie.additionalSessionRoots': [fixtures, cliRoot],
         'telemetry.telemetryLevel': 'off',
         'update.mode': 'none',
         'extensions.autoCheckUpdates': false,

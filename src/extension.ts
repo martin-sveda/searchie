@@ -32,6 +32,7 @@ export function activate(context: vscode.ExtensionContext): SearchieApi {
     open: (s) => impl.open(s),
     preview: (s, o) => impl.preview(s, o),
     openWorkspaceInNewWindow: (s) => impl.openWorkspaceInNewWindow(s),
+    copyResumeCommand: (s) => impl.copyResumeCommand(s),
   };
   context.subscriptions.push(log, service, tree, view, previews, opener, new StatusBar(service), ...registerCommands({ context, service, tree, view, actions }));
   // The worker and the first sync start after activation (N1, R5.13).

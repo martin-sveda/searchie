@@ -58,34 +58,60 @@ export function compareSessions(sort: SortBy): (a: SessionListItem, b: SessionLi
   return (a, b) => key(b) - key(a) || b.lastActivityAt - a.lastActivityAt || (a.key < b.key ? -1 : 1);
 }
 
-export function workspaceLabel(name: string, source: SourceId): string {
-  return `${name} (${SOURCE_LABELS[source]})`;
+const SOURCE_ORDER: readonly SourceId[] = ['vscode', 'vscode-insiders', 'copilot-cli'];
+
+/** R7.27 – group label: name followed by the sources, e.g. `searchie (VS Code, Copilot CLI)`. */
+export function workspaceLabel(name: string, sources: Iterable<SourceId>): string {
+  const set = new Set(sources);
+  return `${name} (${SOURCE_ORDER.filter((s) => set.has(s)).map((s) => SOURCE_LABELS[s]).join(', ')})`;
 }
 
 export interface WorkspaceGroup {
+  /** `folder:<key>` for folder groups, else the single workspace id. */
   id: string;
   label: string;
-  source: SourceId;
+  /** Folder key (R5.21); undefined for a workspace without a folder (empty window, CLI without folder). */
+  folder?: string;
+  sources: SourceId[];
+  workspaceIds: string[];
   current: boolean;
   lastActivityAt: number;
   sessions: SessionListItem[];
 }
 
-/** Groups by workspace; the current workspace (or any of its ids) is pinned first, the rest by last activity. */
-export function groupByWorkspace(sessions: readonly SessionListItem[], currentIds: ReadonlySet<string>, sort: SortBy): WorkspaceGroup[] {
-  const map = new Map<string, WorkspaceGroup>();
+export interface CurrentWorkspace {
+  ids: ReadonlySet<string>;
+  /** Folder key of the current window, so a group with only CLI sessions of this folder is current too. */
+  folder?: string;
+}
+
+const groupKey = (s: SessionListItem): string => (s.folder !== undefined ? `folder:${s.folder}` : s.workspaceId);
+
+/** R7.27 / R7.4 – folder groups across sources; the current group is pinned first, the rest by last activity. */
+export function groupByWorkspace(sessions: readonly SessionListItem[], current: CurrentWorkspace, sort: SortBy): WorkspaceGroup[] {
+  const map = new Map<string, WorkspaceGroup & { vscodeName?: string; cliName?: string }>();
   for (const s of sessions) {
-    let g = map.get(s.workspaceId);
+    const id = groupKey(s);
+    let g = map.get(id);
     if (!g) {
-      g = { id: s.workspaceId, label: workspaceLabel(s.workspaceName, s.source), source: s.source, current: currentIds.has(s.workspaceId), lastActivityAt: 0, sessions: [] };
-      map.set(s.workspaceId, g);
+      g = { id, label: '', folder: s.folder, sources: [], workspaceIds: [], current: false, lastActivityAt: 0, sessions: [] };
+      map.set(id, g);
     }
+    if (!g.sources.includes(s.source)) g.sources.push(s.source);
+    if (!g.workspaceIds.includes(s.workspaceId)) g.workspaceIds.push(s.workspaceId);
+    if (s.source === 'copilot-cli') g.cliName ??= s.workspaceName;
+    else g.vscodeName ??= s.workspaceName;
+    g.current ||= current.ids.has(s.workspaceId) || (s.folder !== undefined && s.folder === current.folder);
     g.sessions.push(s);
     g.lastActivityAt = Math.max(g.lastActivityAt, s.lastActivityAt);
   }
   const cmp = compareSessions(sort);
-  for (const g of map.values()) g.sessions.sort(cmp);
-  return [...map.values()].sort((a, b) => Number(b.current) - Number(a.current) || b.lastActivityAt - a.lastActivityAt || a.label.localeCompare(b.label));
+  const groups = [...map.values()].map(({ vscodeName, cliName, ...g }) => {
+    g.sessions.sort(cmp);
+    g.sources.sort((a, b) => SOURCE_ORDER.indexOf(a) - SOURCE_ORDER.indexOf(b));
+    return { ...g, label: workspaceLabel(vscodeName ?? cliName ?? g.id, g.sources) };
+  });
+  return groups.sort((a, b) => Number(b.current) - Number(a.current) || b.lastActivityAt - a.lastActivityAt || a.label.localeCompare(b.label));
 }
 
 export interface DateGroup {

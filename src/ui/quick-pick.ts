@@ -27,6 +27,7 @@ type Item = ResultItem | LoadMoreItem;
 
 const PREVIEW_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('open-preview'), tooltip: 'Preview' };
 const NEW_WINDOW_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('empty-window'), tooltip: 'Open Workspace in New Window' };
+const COPY_RESUME_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('terminal'), tooltip: 'Copy Resume Command' };
 const CLEAR_SCOPE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('close'), tooltip: 'Search all sessions' };
 
 export function resultItem(r: SearchResult, now = Date.now()): ResultItem {
@@ -37,7 +38,7 @@ export function resultItem(r: SearchResult, now = Date.now()): ResultItem {
     description: [s.workspaceName, relativeTime(s.lastActivityAt, now), shortModel(s.primaryModel)].filter(Boolean).join(' · '),
     detail: hit?.snippet ? `#${hit.turnIndex + 1} ${snippetToPlain(hit.snippet)}` : undefined,
     alwaysShow: true,
-    buttons: [PREVIEW_BUTTON, NEW_WINDOW_BUTTON],
+    buttons: s.source === 'copilot-cli' ? [PREVIEW_BUTTON, COPY_RESUME_BUTTON] : [PREVIEW_BUTTON, NEW_WINDOW_BUTTON],
     result: r,
   };
 }
@@ -89,7 +90,7 @@ export async function showSearchQuickPick(
     cts = source;
     qp.busy = true;
     try {
-      const response = await service.search({ query, offset, scope: scope && { sessionKey: scope.sessionKey, workspaceId: scope.workspaceId } }, source.token);
+      const response = await service.search({ query, offset, scope: scope && { sessionKey: scope.sessionKey, workspaceId: scope.workspaceId, folder: scope.folder } }, source.token);
       if (source.token.isCancellationRequested) return;
       const now = Date.now();
       const items = response.results.map((r) => resultItem(r, now));
@@ -126,6 +127,7 @@ export async function showSearchQuickPick(
       const s = e.item.result.session;
       void state.update(LAST_QUERY_KEY, qp.value);
       if (e.button === PREVIEW_BUTTON) void actions.preview(s, { terms: current.response?.terms, turnIndex: e.item.result.hits[0]?.turnIndex });
+      else if (e.button === COPY_RESUME_BUTTON) void actions.copyResumeCommand(s);
       else {
         qp.hide();
         void actions.openWorkspaceInNewWindow(s);
@@ -156,8 +158,13 @@ export async function showSearchQuickPick(
   await done;
 }
 
+/** Scope of the current window's folder group (R7.4, R7.27), or of its workspace when it has no folder. */
+export function currentScope(service: SearchieService): QuickPickScope {
+  const folder = service.window.folder;
+  return folder !== undefined ? { label: 'current workspace', folder } : { label: 'current workspace', workspaceId: service.window.workspaceId };
+}
+
 /** R7.5 / searchInWorkspace – scope for the current window, honouring `search.defaultScope`. */
 export function defaultScope(service: SearchieService): QuickPickScope | undefined {
-  if (uiSettings().defaultScope !== 'currentWorkspace') return undefined;
-  return { label: 'current workspace', workspaceId: service.window.workspaceId };
+  return uiSettings().defaultScope === 'currentWorkspace' ? currentScope(service) : undefined;
 }

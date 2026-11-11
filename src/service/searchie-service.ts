@@ -2,9 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import * as vscode from 'vscode';
 import { EMPTY_WINDOW, type SourceId, workspaceKey } from '../core/ids';
-import { resolveRoots } from '../core/sources';
+import { folderKey } from '../core/folders';
+import { resolveCliRoots, resolveRoots } from '../core/sources';
 import type { SearchRequest, SearchResponse } from '../query/engine';
 import type { IndexSummary, SessionListItem } from '../store/index-db';
+import type { CurrentWorkspace } from '../ui/tree-model';
 import { IndexLock, LOCK_HEARTBEAT_MS } from '../store/lock';
 import type { SessionMeta } from '../core/model';
 import type { IndexerSettings } from '../worker/indexer';
@@ -32,13 +34,22 @@ export interface CurrentWindow {
   /** `<workspaceStorage>/<hash>/chatSessions`, or `<globalStorage>/emptyWindowChatSessions` in an empty window. */
   chatSessionsDir: string;
   isEmptyWindow: boolean;
+  /** Folder key (R5.21) of this window's `.code-workspace` file or single folder, for the current folder group (R7.4). */
+  folder?: string;
+}
+
+function currentFolderKey(): string | undefined {
+  const file = vscode.workspace.workspaceFile;
+  if (file) return file.scheme === 'untitled' ? undefined : folderKey(file.toString());
+  const folders = vscode.workspace.workspaceFolders;
+  return folders?.length === 1 ? folderKey(folders[0]!.uri.toString()) : undefined;
 }
 
 export function currentWindow(context: vscode.ExtensionContext): CurrentWindow {
   const source = /insiders/i.test(vscode.env.appName) ? 'vscode-insiders' : 'vscode';
   if (context.storageUri) {
     const storageDir = path.dirname(context.storageUri.fsPath);
-    return { source, workspaceId: workspaceKey(source, path.basename(storageDir)), chatSessionsDir: path.join(storageDir, 'chatSessions'), isEmptyWindow: false };
+    return { source, workspaceId: workspaceKey(source, path.basename(storageDir)), chatSessionsDir: path.join(storageDir, 'chatSessions'), isEmptyWindow: false, folder: currentFolderKey() };
   }
   const globalStorage = path.dirname(context.globalStorageUri.fsPath);
   return { source, workspaceId: workspaceKey(source, EMPTY_WINDOW), chatSessionsDir: path.join(globalStorage, 'emptyWindowChatSessions'), isEmptyWindow: true };
@@ -289,7 +300,7 @@ export class SearchieService implements vscode.Disposable {
     this.retryTimer = setTimeout(() => void this.sync('throttled', { throttle: true }), Math.max(500, at - Date.now() + 100));
   }
 
-  /** R5.14 – watch every source root; changes are debounced (2 s) and throttled per file in the worker (R5.15). */
+  /** R5.14 / R5.22 – watch every source root; changes are debounced (2 s) and throttled per file in the worker (R5.15). */
   private updateWatchers(): void {
     for (const w of this.watchers) w.dispose();
     this.watchers = [];
@@ -297,6 +308,12 @@ export class SearchieService implements vscode.Disposable {
     for (const root of resolveRoots(this.settings)) {
       if (!fs.existsSync(root.userDir)) continue;
       const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(root.userDir), pattern));
+      const onChange = (): void => this.onSourceChanged();
+      this.watchers.push(watcher, watcher.onDidChange(onChange), watcher.onDidCreate(onChange), watcher.onDidDelete(onChange));
+    }
+    for (const root of resolveCliRoots(this.settings)) {
+      if (!fs.existsSync(root.dir)) continue;
+      const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(vscode.Uri.file(root.dir), '*/{events.jsonl,workspace.yaml}'));
       const onChange = (): void => this.onSourceChanged();
       this.watchers.push(watcher, watcher.onDidChange(onChange), watcher.onDidCreate(onChange), watcher.onDidDelete(onChange));
     }
@@ -373,9 +390,9 @@ export class SearchieService implements vscode.Disposable {
     return this.client.call('loadSession', { key });
   }
 
-  /** Workspace ids that count as "this window" (R7.4); duplicates are resolved per session (R5.19). */
-  currentWorkspaceIds(): Set<string> {
-    return new Set([this.window.workspaceId]);
+  /** "This window" for the tree (R7.4): its workspace id and folder key; the current group is the folder group containing it. */
+  currentWorkspace(): CurrentWorkspace {
+    return { ids: new Set([this.window.workspaceId]), folder: this.window.folder };
   }
 
   dispose(): void {

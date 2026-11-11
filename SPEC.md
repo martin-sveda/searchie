@@ -62,8 +62,8 @@ Searchie is an independent repository. Proven concepts and code are **copied** (
 
 Requirements:
 
-- R2.1 – Repository contains `THIRD_PARTY_NOTICES.md` listing Searchie prototype origin and license.
-- R2.2 – Copied code lives under `src/core/vendor/` (or carries a `// Adapted from Searchie prototype: <path>` line) so origin stays traceable.
+- R2.1 – Copied files keep the original MIT copyright header (`Copyright (c) Microsoft Corporation`); the repository contains `THIRD_PARTY_NOTICES.md` listing the Searchie prototype origin with the full MIT license text, and the VSIX ships that file.
+- R2.2 – Copied code lives under `src/core/vendor/` and carries a `// Adapted from Searchie prototype: <path>` line so origin stays traceable.
 - R2.3 – Confirm internal approval to publish Searchie prototype-derived code publicly before Marketplace release (§14, Phase 3).
 
 ---

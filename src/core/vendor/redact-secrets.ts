@@ -1,3 +1,8 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See THIRD_PARTY_NOTICES.md in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+// Adapted from Searchie prototype: src/core/redact-secrets.ts
 // Changes for Searchie: none (verbatim copy); used for snippets and preview (R6.11, R10.4).
 
 /**

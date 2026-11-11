@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See THIRD_PARTY_NOTICES.md in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+// Adapted from Searchie prototype: src/core/parser-vscode-files.ts
+// (forEachJsonlLineAsync, stripImageData, setAtPath, appendAtPath, reconstructFromJsonl)
 // Changes for Searchie: streaming replay is async; files are opened read-only; lines longer than
 // `maxLineChars` are skipped without being buffered (R4.14); unknown kinds are counted (R4.4);
 // optional `preStrip` (string level) and `prune` (after JSON.parse) hooks keep memory bounded (R4.13).

@@ -19,7 +19,7 @@ Phase 0 ran on 2026-11-10 against VS Code 1.145.2 (Electron 43.8.3, Node 24.22.1
 ## Layout
 
 - `node.sh` runs VS Code's bundled Node (`ELECTRON_RUN_AS_NODE=1`), the same runtime as the extension host.
-- `s3-cli-mapping/`: Copilot CLI structure survey (kept until the CLI source lands in Phase 2).
+- `s3-cli-mapping/` (Copilot CLI survey) was removed in Phase 2; its replacement is `src/core/parser-cli.ts` and `src/core/cli-sources.ts`. The script remains in the git history.
 - `s1-chat-open/` (probe extension) and `s2-index-engine/` (benchmark) were removed in Phase 1; their replacements are `src/service/chat-opener.ts` and `src/store`, `src/worker`, `src/bench` (`npm run bench`). The code is preserved in the git tag `phase0-spikes`.
 - `make-fixtures.mjs` generates the anonymized fixtures in [`../src/test/fixtures/`](../src/test/fixtures/README.md).
 - `*/out/` holds local results (counts and timings only) and is git-ignored.

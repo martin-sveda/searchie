@@ -8,7 +8,7 @@ How do Copilot CLI sessions (`~/.copilot/session-state/<sessionId>/`) map to the
 
 ## Method
 
-1. Ran [`s3-cli-mapping/survey.mjs`](s3-cli-mapping/survey.mjs) over the local session-state directory. The script prints only event `type` frequencies, key paths with value types, `workspace.yaml` keys, directory and lock-file name patterns, and version strings. String values are never printed, except an allow-list of enum-like fields such as model ids and mode names, each validated against an identifier regex. Subtrees whose key names can be content-derived (`toolTelemetry`, `result`, `requestedSchema`, …) are recorded as present only.
+1. Ran `s3-cli-mapping/survey.mjs` (removed in Phase 2, still in the git history) over the local session-state directory. The script prints only event `type` frequencies, key paths with value types, `workspace.yaml` keys, directory and lock-file name patterns, and version strings. String values are never printed, except an allow-list of enum-like fields such as model ids and mode names, each validated against an identifier regex. Subtrees whose key names can be content-derived (`toolTelemetry`, `result`, `requestedSchema`, …) are recorded as present only.
 2. Compared the results with Searchie prototype `src/core/parser-vscode-cli.ts`.
 3. Cross-checked the field semantics against the public generated schema [`github/copilot-sdk` `nodejs/src/generated/session-events.ts`](https://github.com/github/copilot-sdk/blob/main/nodejs/src/generated/session-events.ts) (event union, `UserMessageData`, `AbortReason`, `UserMessageAgentMode`, `AssistantUsageData`).
 4. Took the resume syntax from the public [Copilot CLI command reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference). No `copilot` binary is installed locally; the copy bundled in VS Code (`extensions/copilot/node_modules/@github/copilot` 1.0.73) contains only the SDK.
@@ -152,6 +152,8 @@ The resumed session runs in its own working directory: the reference describes "
 - **The `vscode-agent-host` origin.** Followed up in S1: `vscode.open` on `copilotcli:/<sessionId>` opens a CLI session with its history in VS Code 1.145.2, while `agent-host-copilotcli:/<id>` fails. This could extend R8.5 beyond Preview-only (owner decision).
 
 ## Reproduce
+
+The survey script was removed once the CLI parser landed (`src/core/parser-cli.ts`). Restore it from the git history (`git log --diff-filter=D -- spikes/s3-cli-mapping/survey.mjs`), then:
 
 ```sh
 cd spikes/s3-cli-mapping

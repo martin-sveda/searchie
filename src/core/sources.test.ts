@@ -5,7 +5,7 @@ import { copyFixtureUserDir, FIXTURE_USER_DIR, MAIN_ID, tempDir, WS_FILE_HASH, W
 import { RawVsCodeSessionSchema, sessionKey, SessionMetaSchema, workspaceKey } from './model';
 import { defaultUserDirs, discoverWorkspaces, readWorkspaceIdentity, resolveRoots, type SourceSettings, sourceForPath } from './sources';
 
-const BASE: SourceSettings = { vscode: true, vscodeInsiders: true, emptyWindow: true, additionalSessionRoots: [], excludeWorkspaces: [] };
+const BASE: SourceSettings = { vscode: true, vscodeInsiders: true, copilotCli: false, emptyWindow: true, additionalSessionRoots: [], excludeWorkspaces: [] };
 
 describe('defaultUserDirs', () => {
   it('uses Application Support on macOS', () => {

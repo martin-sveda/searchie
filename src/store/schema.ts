@@ -1,11 +1,11 @@
 /** Index schema (SPEC §5.3) and versions (R4.7, R5.17). */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta      (key TEXT PRIMARY KEY, value TEXT);
 CREATE TABLE IF NOT EXISTS workspaces(id TEXT PRIMARY KEY, source TEXT, name TEXT, uri TEXT,
-                        fingerprint TEXT);
+                        fingerprint TEXT, folder TEXT);
 CREATE TABLE IF NOT EXISTS files     (path TEXT PRIMARY KEY, source TEXT, workspace_id TEXT,
                         mtime INTEGER, size INTEGER, parser_version INTEGER,
                         session_key TEXT, status TEXT, error TEXT);
@@ -35,6 +35,7 @@ CREATE INDEX IF NOT EXISTS ix_turns_session ON turns(session_key, idx);
 CREATE INDEX IF NOT EXISTS ix_turn_tools    ON turn_tools(turn_id);
 CREATE INDEX IF NOT EXISTS ix_files_session ON files(session_key);
 CREATE INDEX IF NOT EXISTS ix_files_ws      ON files(workspace_id);
+CREATE INDEX IF NOT EXISTS ix_workspaces_folder ON workspaces(folder);
 `;
 
 /** FTS column order; used for bm25 weights (§6.3) and snippet() column indexes. */

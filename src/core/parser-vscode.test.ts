@@ -14,7 +14,7 @@ import {
   tempDir,
   writeJsonl,
 } from '../test/helpers';
-import { combinedParserVersion, parserFor, vscodeParser } from './parsers';
+import { parserFor, parserSignature, vscodeParser } from './parsers';
 import {
   deriveTitle,
   mapVsCodeSession,
@@ -262,8 +262,8 @@ describe('deriveTitle and parser registry', () => {
   it('finds the vscode parser for both VS Code sources', () => {
     expect(parserFor({ path: 'a', source: 'vscode', kind: 'jsonl' })).toBe(vscodeParser);
     expect(parserFor({ path: 'a', source: 'vscode-insiders', kind: 'json' })).toBe(vscodeParser);
-    expect(parserFor({ path: 'a', source: 'copilot-cli', kind: 'jsonl' })).toBeUndefined();
-    expect(combinedParserVersion()).toBeGreaterThanOrEqual(1);
+    expect(parserFor({ path: 'a', source: 'copilot-cli', kind: 'jsonl' })?.id).toBe('copilot-cli');
+    expect(parserSignature()).toMatch(/^vscode@\d+,copilot-cli@\d+$/);
   });
 
   it('parses through the registry', async () => {

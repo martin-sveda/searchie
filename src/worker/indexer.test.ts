@@ -4,7 +4,10 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { IndexDb } from '../store/index-db';
 import { openNodeSqliteStore } from '../store/node-sqlite-store';
 import { indexConfigValue, META } from '../store/schema';
+import { folderHash } from '../core/folders';
 import {
+  CLI_ID,
+  copyFixtureCliRoot,
   copyFixtureUserDir,
   EMPTY_WINDOW_ID,
   stableFixtureUserDir,
@@ -20,6 +23,7 @@ import { CancelledError, coldBuild, Indexer, type IndexerSettings, indexPaths, r
 const settingsFor = (userDir: string, extra: Partial<IndexerSettings> = {}): IndexerSettings => ({
   vscode: false,
   vscodeInsiders: false,
+  copilotCli: false,
   emptyWindow: true,
   additionalSessionRoots: [userDir],
   excludeWorkspaces: [],
@@ -273,5 +277,69 @@ describe('incremental scans (§5.5)', () => {
     const s = await new Indexer(db, settings, { onParsing: (p) => parsing.push(p), onProgress: (d, t) => progress.push([d, t]) }).scan({ force: true });
     expect(parsing).toHaveLength(s.parsed);
     expect(progress.at(-1)).toEqual([4, 4]);
+  });
+});
+
+describe('Copilot CLI source (§4.3, R5.21, R5.22)', () => {
+  const CLI_KEY = `copilot-cli:${CLI_ID}`;
+  const FOLDER = '/home/user/projects/sample-app';
+  let cliRoot: string;
+  let dir: string;
+  let settings: IndexerSettings;
+  let db: IndexDb;
+
+  beforeEach(async () => {
+    cliRoot = copyFixtureCliRoot();
+    dir = tempDir();
+    settings = settingsFor(stableFixtureUserDir(), { additionalSessionRoots: [stableFixtureUserDir(), cliRoot] });
+    const stats = await coldBuild(indexPaths(dir), settings);
+    expect(stats).toMatchObject({ workspaces: 4, files: 5, failed: 0 });
+    db = openLive(dir);
+  });
+
+  it('indexes the CLI session with its metadata and the shared folder key', () => {
+    expect(db.sessionMeta(CLI_KEY)).toMatchObject({
+      id: CLI_ID,
+      source: 'copilot-cli',
+      workspaceId: `copilot-cli:${folderHash(FOLDER)}`,
+      title: 'Sample CLI session',
+      turnCount: 2,
+      promptCount: 2,
+      canceledCount: 1,
+      promptTokens: 25_500,
+      completionTokens: 500,
+      credits: 4.3,
+      tools: { view: 1, create: 1, bash: 1 },
+    });
+    const folders = db.store.all<{ source: string; folder: string | null }>('SELECT source, folder FROM workspaces ORDER BY source, folder');
+    expect(folders.filter((w) => w.folder === FOLDER).map((w) => w.source)).toEqual(['copilot-cli', 'vscode']);
+    expect(db.listSessions({ sources: ['copilot-cli'] }).map((s) => [s.key, s.folder])).toEqual([[CLI_KEY, FOLDER]]);
+    expect(db.listSessions({ folder: FOLDER }).map((s) => s.source).sort()).toEqual(['copilot-cli', 'vscode', 'vscode']);
+    expect(db.summary(1_768_500_000_000).workspaces).toBeLessThanOrEqual(3);
+    expect(db.facets().sources).toEqual(['copilot-cli', 'vscode']);
+  });
+
+  it('keeps sub-agent, system, tool output and attachment text out of the index', () => {
+    for (const term of ['"SUB-AGENT"', 'SYSTEM', 'GENERATED', 'iVBORw0KGgo']) expect(match(db, term)).toEqual([]);
+    expect(match(db, 'parseJsonLine').map((r) => r.key)).toContain(CLI_KEY);
+  });
+
+  it('moves a session to a new workspace when its folder changes and drops the empty group', async () => {
+    const yaml = path.join(cliRoot, CLI_ID, 'workspace.yaml');
+    fs.writeFileSync(yaml, fs.readFileSync(yaml, 'utf8').replaceAll(FOLDER, '/w/moved'));
+    fs.utimesSync(yaml, new Date(), new Date(Date.now() + 5000));
+    await new Indexer(db, settings).scan();
+    expect(db.sessionMeta(CLI_KEY)?.workspaceId).toBe(`copilot-cli:${folderHash('/w/moved')}`);
+    expect(db.store.all('SELECT id FROM workspaces WHERE id = ?', [`copilot-cli:${folderHash(FOLDER)}`])).toEqual([]);
+  });
+
+  it('de-duplicates the same session id under two CLI roots (R5.19)', async () => {
+    const other = copyFixtureCliRoot();
+    const d2 = tempDir();
+    const stats = await coldBuild(indexPaths(d2), settingsFor(cliRoot, { additionalSessionRoots: [cliRoot, other] }));
+    expect(stats).toMatchObject({ files: 2, duplicates: 1 });
+    const db2 = openLive(d2);
+    expect(db2.filesOfSession(CLI_KEY).map((f) => f.status).sort()).toEqual(['duplicate', 'ok']);
+    db2.store.close();
   });
 });

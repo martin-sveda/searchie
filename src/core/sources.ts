@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { type CliRoot, CLI_ROOT_NAMES, cliRootsForEntry, discoverCliWorkspaces } from './cli-sources';
+import { folderKey } from './folders';
 import { EMPTY_WINDOW, type SourceId, workspaceKey } from './ids';
 import { fileUriToPath, matchesAnyGlob } from './text';
 
-/** Source and workspace discovery for VS Code Stable / Insiders (SPEC §3). */
+/** Source and workspace discovery for VS Code Stable / Insiders and Copilot CLI (SPEC §3). */
 
 export type VsCodeSource = Extract<SourceId, 'vscode' | 'vscode-insiders'>;
 
@@ -17,6 +19,7 @@ export interface VsCodeRoot {
 export interface SourceSettings {
   vscode: boolean;
   vscodeInsiders: boolean;
+  copilotCli: boolean;
   emptyWindow: boolean;
   additionalSessionRoots: readonly string[];
   excludeWorkspaces: readonly string[];
@@ -84,19 +87,45 @@ export function resolveRoots(settings: SourceSettings, env: PlatformEnv = curren
   for (const r of defaultUserDirs(env)) {
     if (r.source === 'vscode' ? settings.vscode : settings.vscodeInsiders) add({ ...r, additional: false });
   }
+  for (const dir of additionalEntries(settings, env)) {
+    if (cliRootsForEntry(dir)) continue;
+    add({ source: sourceForPath(dir), userDir: dir, additional: true });
+  }
+  return roots;
+}
+
+/** Resolved `additionalSessionRoots` entries (`~` expanded, absolute). */
+function additionalEntries(settings: Pick<SourceSettings, 'additionalSessionRoots'>, env: PlatformEnv): string[] {
   const p = env.platform === 'win32' ? path.win32 : path.posix;
+  const out: string[] = [];
   for (const raw of settings.additionalSessionRoots) {
     if (typeof raw !== 'string' || !raw.trim()) continue;
     let dir = raw.trim();
     if (dir === '~' || dir.startsWith('~/') || dir.startsWith('~\\')) dir = p.join(env.home, dir.slice(1));
-    add({ source: sourceForPath(dir), userDir: p.resolve(dir), additional: true });
+    out.push(p.resolve(dir));
   }
+  return out;
+}
+
+/** R3.6 / R3.2 – default CLI roots (when enabled) plus CLI roots among the additional roots, de-duplicated. */
+export function resolveCliRoots(settings: SourceSettings, env: PlatformEnv = currentPlatformEnv()): CliRoot[] {
+  const p = env.platform === 'win32' ? path.win32 : path.posix;
+  const roots: CliRoot[] = [];
+  const seen = new Set<string>();
+  const add = (dir: string, additional: boolean): void => {
+    const norm = env.platform === 'win32' ? dir.toLowerCase() : dir;
+    if (seen.has(norm)) return;
+    seen.add(norm);
+    roots.push({ dir, additional });
+  };
+  if (settings.copilotCli && env.home) for (const name of CLI_ROOT_NAMES) add(p.join(env.home, '.copilot', name), false);
+  for (const dir of additionalEntries(settings, env)) for (const root of cliRootsForEntry(dir) ?? []) add(root, true);
   return roots;
 }
 
 export interface DiscoveredFile {
   path: string;
-  source: VsCodeSource;
+  source: SourceId;
   workspaceId: string;
   kind: 'jsonl' | 'json';
   mtimeMs: number;
@@ -105,10 +134,12 @@ export interface DiscoveredFile {
 
 export interface DiscoveredWorkspace {
   id: string;
-  source: VsCodeSource;
+  source: SourceId;
   name: string;
   uri?: string;
   folderPath?: string;
+  /** Normalized folder key (R5.21); undefined for empty windows and CLI sessions without a folder. */
+  folder?: string;
   /** Directory holding the session files. */
   dir: string;
   fingerprint: string;
@@ -215,7 +246,7 @@ export async function discoverWorkspaces(roots: readonly VsCodeRoot[], settings:
       if (!listed) continue;
       const identity = readWorkspaceIdentity(storageDir);
       if (identity.folderPath && matchesAnyGlob(identity.folderPath, settings.excludeWorkspaces)) continue;
-      add({ id, source: root.source, ...identity, dir, ...listed });
+      add({ id, source: root.source, ...identity, folder: folderKey(identity.uri), dir, ...listed });
     }
     if (settings.emptyWindow) {
       const dir = path.join(root.userDir, 'globalStorage', 'emptyWindowChatSessions');
@@ -225,4 +256,11 @@ export async function discoverWorkspaces(roots: readonly VsCodeRoot[], settings:
     }
   }
   return [...byId.values()];
+}
+
+/** All enabled sources: VS Code workspaces (incl. empty windows) and Copilot CLI folder groups. */
+export async function discoverAll(settings: SourceSettings, env: PlatformEnv = currentPlatformEnv()): Promise<DiscoveredWorkspace[]> {
+  const vscode = await discoverWorkspaces(resolveRoots(settings, env), settings);
+  const cli = await discoverCliWorkspaces(resolveCliRoots(settings, env), settings.excludeWorkspaces);
+  return [...vscode, ...cli];
 }

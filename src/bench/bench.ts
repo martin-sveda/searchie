@@ -1,13 +1,14 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { discoverWorkspaces, resolveRoots } from '../core/sources';
+import { discoverAll } from '../core/sources';
 import { WorkerClient } from '../service/worker-client';
 import type { IndexStore } from '../store/index-store';
 import { openNodeSqliteStore } from '../store/node-sqlite-store';
 import type { IndexerSettings } from '../worker/indexer';
 
 /**
- * `npm run bench -- --data <VS Code User dir> [--synthetic 50000] [--out /tmp/searchie-dev/bench] [--reps 20]`
+ * `npm run bench -- --data <dir> [--synthetic 50000] [--out /tmp/searchie-dev/bench] [--reps 20]`
+ * `<dir>` is a VS Code `User/` dir, a Copilot CLI root, or a dir holding `vscode/` and/or `cli/session-state/`.
  * Prints N2, N3, N4, N6, N7 (SPEC §11). Output is counts and timings only – never text, terms or paths.
  * Writes only below --out (default /tmp/searchie-dev/bench); delete it afterwards.
  */
@@ -26,17 +27,18 @@ function parseArgs(argv: string[]): Args {
   };
   const data = get('data');
   if (!data) {
-    console.error('usage: npm run bench -- --data <VS Code User dir> [--synthetic 50000] [--out dir] [--reps 20]');
+    console.error('usage: npm run bench -- --data <dir> [--synthetic 50000] [--out dir] [--reps 20]');
     process.exit(2);
   }
   return { data: path.resolve(data), out: path.resolve(get('out') ?? '/tmp/searchie-dev/bench'), synthetic: Number(get('synthetic') ?? 0), reps: Number(get('reps') ?? 20) };
 }
 
-const settingsFor = (root: string): IndexerSettings => ({
+const settingsFor = (roots: string[]): IndexerSettings => ({
   vscode: false,
   vscodeInsiders: false,
+  copilotCli: false,
   emptyWindow: true,
-  additionalSessionRoots: [root],
+  additionalSessionRoots: roots,
   excludeWorkspaces: [],
   includeThinking: false,
   maxTurnTextKB: 64,
@@ -46,8 +48,14 @@ const settingsFor = (root: string): IndexerSettings => ({
 const mb = (b: number): string => (b / 1024 / 1024).toFixed(1);
 const pct = (sorted: number[], p: number): number => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] ?? 0;
 
-async function sourceBytes(root: string): Promise<{ bytes: number; files: number }> {
-  const ws = await discoverWorkspaces(resolveRoots(settingsFor(root)), { emptyWindow: true, excludeWorkspaces: [] });
+/** Roots below `--data`: `vscode/` and `cli/{session-state,history-session-state}/` when present, else `--data` itself. */
+function rootsFor(data: string): string[] {
+  const roots = [path.join(data, 'vscode'), path.join(data, 'cli', 'session-state'), path.join(data, 'cli', 'history-session-state')].filter((p) => fs.existsSync(p));
+  return roots.length ? roots : [data];
+}
+
+async function sourceBytes(roots: string[]): Promise<{ bytes: number; files: number }> {
+  const ws = await discoverAll(settingsFor(roots));
   const files = ws.flatMap((w) => w.files);
   return { bytes: files.reduce((n, f) => n + f.size, 0), files: files.length };
 }
@@ -141,17 +149,17 @@ function writeSynthetic(store: IndexStore, root: string, turns: number): void {
   }
 }
 
-async function run(label: string, root: string, outDir: string, reps: number, bytesPerTurn?: number): Promise<{ store: IndexStore; bytesPerTurn: number }> {
+async function run(label: string, roots: string[], outDir: string, reps: number, bytesPerTurn?: number): Promise<{ store: IndexStore; bytesPerTurn: number }> {
   fs.rmSync(outDir, { recursive: true, force: true });
   fs.mkdirSync(outDir, { recursive: true, mode: 0o700 });
-  const src = await sourceBytes(root);
+  const src = await sourceBytes(roots);
   const baseline = process.memoryUsage().rss;
   let peak = baseline;
   const sampler = setInterval(() => {
     peak = Math.max(peak, process.memoryUsage().rss);
   }, 25);
   const client = new WorkerClient(path.join(__dirname, 'worker.js'), () => undefined, (e) => console.error(`worker crashed: ${e.code}`));
-  await client.call('init', { dir: outDir, settings: settingsFor(root), writer: true });
+  await client.call('init', { dir: outDir, settings: settingsFor(roots), writer: true });
   const t0 = performance.now();
   const built = await client.call('sync', {});
   const buildMs = performance.now() - t0;
@@ -193,6 +201,10 @@ async function run(label: string, root: string, outDir: string, reps: number, by
   await client.dispose();
   all.sort((a, b) => a - b);
   const counts = store.get<{ sessions: number; turns: number }>('SELECT (SELECT count(*) FROM sessions) AS sessions, (SELECT count(*) FROM turns) AS turns')!;
+  const bySource = store
+    .all<{ source: string; n: number; t: number }>('SELECT s.source, count(*) AS n, sum(s.turn_count) AS t FROM sessions s GROUP BY s.source ORDER BY s.source')
+    .map((r) => `${r.source} ${r.n}/${r.t}`)
+    .join(', ');
   const idx = indexBytes(outDir);
   // Synthetic files hold text only; compare against the real source size of the same number of turns (as in spike S2).
   const srcBytes = bytesPerTurn ? bytesPerTurn * counts.turns : src.bytes;
@@ -202,6 +214,7 @@ async function run(label: string, root: string, outDir: string, reps: number, by
   const judge = (ok: boolean): string => (srcBytes < 10 * 1024 * 1024 ? 'n/a (< 10 MB source)' : ok ? '✅' : '❌');
   console.log(`\n## ${label}`);
   console.log(`source: ${src.files} files, ${mb(src.bytes)} MB${bytesPerTurn ? ` (equivalent real source: ${mb(srcBytes)} MB)` : ''} · indexed: ${counts.sessions} sessions, ${counts.turns} turns · failed files: ${built.stats?.failed ?? 0}`);
+  console.log(`by source (sessions/turns): ${bySource || '—'}`);
   console.log('| Target | Value | Limit | Pass |\n|---|---|---|---|');
   console.log(`| N2 cold build | ${(buildMs / 1000).toFixed(2)} s (${per500.toFixed(2)} s per 500 MB) | ≤ 90 s / 500 MB | ${judge(per500 <= 90)} |`);
   console.log(`| N3 incremental, 1 session (${incr.turns} turns, ${incr.parsed} parsed) | ${incr.ms.toFixed(0)} ms | < 1000 ms | ${incr.ms < 1000 ? '✅' : '❌'} |`);
@@ -218,15 +231,14 @@ async function run(label: string, root: string, outDir: string, reps: number, by
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const root = fs.existsSync(path.join(args.data, 'vscode')) ? path.join(args.data, 'vscode') : args.data;
   console.log(`# Searchie bench · Node ${process.versions.node} · SQLite ${process.versions.sqlite ?? '?'} · ${process.platform}/${process.arch}`);
-  const { store, bytesPerTurn } = await run('Source data', root, path.join(args.out, 'real'), args.reps);
+  const { store, bytesPerTurn } = await run('Source data', rootsFor(args.data), path.join(args.out, 'real'), args.reps);
   if (args.synthetic > 0) {
     const synthRoot = path.join(args.out, 'synthetic-src');
     fs.rmSync(synthRoot, { recursive: true, force: true });
     writeSynthetic(store, synthRoot, args.synthetic);
     store.close();
-    (await run(`Synthetic ${args.synthetic} turns`, synthRoot, path.join(args.out, 'synthetic'), args.reps, bytesPerTurn)).store.close();
+    (await run(`Synthetic ${args.synthetic} turns`, [synthRoot], path.join(args.out, 'synthetic'), args.reps, bytesPerTurn)).store.close();
   } else {
     store.close();
   }

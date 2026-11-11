@@ -2,7 +2,7 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { IndexDb } from '../store/index-db';
 import { openNodeSqliteStore } from '../store/node-sqlite-store';
-import { EMPTY_WINDOW_ID, stableFixtureUserDir, LEGACY_ID, MAIN_ID, placeholderRequest, tempDir, WS_FOLDER_HASH, writeJsonl } from '../test/helpers';
+import { CLI_ID, copyFixtureCliRoot, EMPTY_WINDOW_ID, stableFixtureUserDir, LEGACY_ID, MAIN_ID, placeholderRequest, tempDir, WS_FOLDER_HASH, writeJsonl } from '../test/helpers';
 import { coldBuild, type IndexerSettings, indexPaths } from '../worker/indexer';
 import { QueryEngine, type SearchResponse } from './engine';
 import { mergeWeights, sessionScore, turnScore } from './ranking';
@@ -16,6 +16,7 @@ const NOW = Date.UTC(2026, 0, 20);
 const settings = (root: string, extra: Partial<IndexerSettings> = {}): IndexerSettings => ({
   vscode: false,
   vscodeInsiders: false,
+  copilotCli: false,
   emptyWindow: true,
   additionalSessionRoots: [root],
   excludeWorkspaces: [],
@@ -32,6 +33,29 @@ async function engineFor(root: string, extra: Partial<IndexerSettings> = {}): Pr
 }
 
 const keys = (r: SearchResponse): string[] => r.results.map((x) => x.session.key);
+
+describe('QueryEngine with the Copilot CLI fixture', () => {
+  const CLI = `copilot-cli:${CLI_ID}`;
+  let engine: QueryEngine;
+  const q = (query: string, extra: Partial<Parameters<QueryEngine['search']>[0]> = {}): SearchResponse => engine.search({ query, now: NOW, ...extra });
+  beforeAll(async () => {
+    engine = await engineFor(stableFixtureUserDir(), { additionalSessionRoots: [stableFixtureUserDir(), copyFixtureCliRoot()] });
+  });
+
+  it('filters by src:cli, tool: and file: on CLI turns', () => {
+    expect(keys(q('src:cli'))).toEqual([CLI]);
+    expect(keys(q('tool:bash'))).toEqual([CLI]);
+    expect(keys(q('parseJsonLine src:vscode'))).not.toContain(CLI);
+    expect(keys(q('file:parser.test.ts'))).toEqual([CLI]);
+  });
+
+  it('scopes a folder group across sources (R7.27) and never matches sub-agent or tool output', () => {
+    expect(keys(q('placeholder', { scope: { folder: '/home/user/projects/sample-app' } })).sort()).toEqual([CLI, LEGACY, MAIN].sort());
+    expect(keys(q('', { scope: { folder: '/nowhere' } }))).toEqual([]);
+    expect(q('"SUB-AGENT OUTPUT"').total).toBe(0);
+    expect(q('"TOOL OUTPUT"').total).toBe(0);
+  });
+});
 
 describe('QueryEngine on the fixtures – golden queries (expected top 3)', () => {
   let engine: QueryEngine;

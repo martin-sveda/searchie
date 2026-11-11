@@ -12,6 +12,7 @@ export interface WorkspaceRow {
   name: string;
   uri: string | null;
   fingerprint: string | null;
+  folder: string | null;
 }
 
 export type FileStatus = 'ok' | 'empty' | 'duplicate' | 'failed';
@@ -35,6 +36,8 @@ export interface SessionListItem {
   workspaceId: string;
   workspaceName: string;
   workspaceUri?: string;
+  /** Folder key of the workspace (R5.21); sessions with the same folder form one group (R7.27). */
+  folder?: string;
   title: string;
   createdAt: number;
   lastActivityAt: number;
@@ -91,12 +94,13 @@ export function buildTurnText(title: string, t: Turn, config: IndexConfig): Reco
 }
 
 export const SESSION_LIST_SQL = `SELECT s.key, s.id, s.source, s.workspace_id AS workspaceId, COALESCE(w.name, s.workspace_id) AS workspaceName,
-  w.uri AS workspaceUri, s.title, s.created_at AS createdAt, s.last_at AS lastActivityAt, s.turn_count AS turnCount,
+  w.uri AS workspaceUri, w.folder AS folder, s.title, s.created_at AS createdAt, s.last_at AS lastActivityAt, s.turn_count AS turnCount,
   s.prompt_count AS promptCount, s.credits, s.primary_model AS primaryModel, s.primary_mode AS primaryMode
   FROM sessions s LEFT JOIN workspaces w ON w.id = s.workspace_id`;
 
-export type ListRow = Omit<SessionListItem, 'workspaceUri' | 'credits' | 'primaryModel' | 'primaryMode'> & {
+export type ListRow = Omit<SessionListItem, 'workspaceUri' | 'folder' | 'credits' | 'primaryModel' | 'primaryMode'> & {
   workspaceUri: string | null;
+  folder: string | null;
   credits: number | null;
   primaryModel: string | null;
   primaryMode: string | null;
@@ -106,6 +110,7 @@ export function toListItem(r: ListRow): SessionListItem {
   return {
     ...r,
     workspaceUri: r.workspaceUri ?? undefined,
+    folder: r.folder ?? undefined,
     credits: nn(r.credits),
     primaryModel: r.primaryModel ?? undefined,
     primaryMode: r.primaryMode ?? undefined,
@@ -117,7 +122,7 @@ export class IndexDb {
 
   // ------------------------------------------------------------ schema / meta
 
-  createSchema(meta: { parserVersion: number; config: IndexConfig; noisePatterns: readonly string[] }): void {
+  createSchema(meta: { parserVersion: string; config: IndexConfig; noisePatterns: readonly string[] }): void {
     this.store.exec(SCHEMA_SQL);
     this.store.transaction(() => {
       this.setMeta(META.schemaVersion, String(SCHEMA_VERSION));
@@ -142,14 +147,14 @@ export class IndexDb {
   // ------------------------------------------------------------ workspaces / files
 
   workspaces(): WorkspaceRow[] {
-    return this.store.all<WorkspaceRow>('SELECT id, source, name, uri, fingerprint FROM workspaces');
+    return this.store.all<WorkspaceRow>('SELECT id, source, name, uri, fingerprint, folder FROM workspaces');
   }
 
-  upsertWorkspace(w: { id: string; source: string; name: string; uri?: string }): void {
+  upsertWorkspace(w: { id: string; source: string; name: string; uri?: string; folder?: string }): void {
     this.store.run(
-      `INSERT INTO workspaces(id, source, name, uri, fingerprint) VALUES (?, ?, ?, ?, NULL)
-       ON CONFLICT(id) DO UPDATE SET source = excluded.source, name = excluded.name, uri = excluded.uri`,
-      [w.id, w.source, w.name, w.uri ?? null],
+      `INSERT INTO workspaces(id, source, name, uri, fingerprint, folder) VALUES (?, ?, ?, ?, NULL, ?)
+       ON CONFLICT(id) DO UPDATE SET source = excluded.source, name = excluded.name, uri = excluded.uri, folder = excluded.folder`,
+      [w.id, w.source, w.name, w.uri ?? null, w.folder ?? null],
     );
   }
 
@@ -327,12 +332,16 @@ export class IndexDb {
 
   // ------------------------------------------------------------ reads for the UI
 
-  listSessions(filter: { workspaceId?: string; sources?: readonly string[]; models?: readonly string[]; modes?: readonly string[]; after?: number; before?: number } = {}): SessionListItem[] {
+  listSessions(filter: { workspaceId?: string; folder?: string; sources?: readonly string[]; models?: readonly string[]; modes?: readonly string[]; after?: number; before?: number } = {}): SessionListItem[] {
     const where: string[] = ['s.turn_count > 0'];
     const params: SqlValue[] = [];
     if (filter.workspaceId) {
       where.push('s.workspace_id = ?');
       params.push(filter.workspaceId);
+    }
+    if (filter.folder !== undefined) {
+      where.push('w.folder = ?');
+      params.push(filter.folder);
     }
     const inList = (col: string, values: readonly string[] | undefined): void => {
       if (!values?.length) return;
@@ -419,7 +428,8 @@ export class IndexDb {
 
   summary(now = Date.now()): IndexSummary {
     const r = this.store.get<{ sessions: number; prompts: number | null; workspaces: number }>(
-      'SELECT count(*) AS sessions, sum(prompt_count) AS prompts, count(DISTINCT workspace_id) AS workspaces FROM sessions WHERE turn_count > 0',
+      `SELECT count(*) AS sessions, sum(s.prompt_count) AS prompts, count(DISTINCT COALESCE(w.folder, s.workspace_id)) AS workspaces
+       FROM sessions s LEFT JOIN workspaces w ON w.id = s.workspace_id WHERE s.turn_count > 0`,
     );
     const c = this.store.get<{ credits: number | null }>('SELECT sum(credits) AS credits FROM turns WHERE ts >= ? AND hidden = 0', [now - 30 * 86_400_000]);
     return { sessions: r?.sessions ?? 0, prompts: r?.prompts ?? 0, workspaces: r?.workspaces ?? 0, credits30d: c?.credits ?? null, failedFiles: this.failedFileCount() };

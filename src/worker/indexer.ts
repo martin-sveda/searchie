@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import { type ParsedSession, sessionKey } from '../core/model';
 import { SessionParseError } from '../core/parser-vscode';
-import { combinedParserVersion, parserFor } from '../core/parsers';
-import { type DiscoveredFile, type DiscoveredWorkspace, discoverWorkspaces, type PlatformEnv, resolveRoots, type SourceSettings } from '../core/sources';
+import { parserFor, parserSignature } from '../core/parsers';
+import { type DiscoveredFile, type DiscoveredWorkspace, discoverAll, type PlatformEnv, type SourceSettings } from '../core/sources';
 import { createNoiseMatcher } from '../core/text';
 import { type FileRow, type FileStatus, IndexDb } from '../store/index-db';
 import { openNodeSqliteStore, publishBuild } from '../store/node-sqlite-store';
@@ -69,7 +69,6 @@ function errorCode(e: unknown): string {
 
 export class Indexer {
   private readonly lastIndexed = new Map<string, number>();
-  private readonly parserVersion = combinedParserVersion();
   private isNoise: (p: string) => boolean;
 
   constructor(
@@ -104,7 +103,7 @@ export class Indexer {
     const t0 = performance.now();
     const db = this.db;
     const stats: ScanStats = { workspaces: 0, changedWorkspaces: 0, files: 0, parsed: 0, sessionsWritten: 0, turnsWritten: 0, removedFiles: 0, failed: 0, empty: 0, duplicates: 0, deferred: 0, durationMs: 0 };
-    const discovered = await discoverWorkspaces(resolveRoots(this.settings, this.hooks.env), this.settings);
+    const discovered = await discoverAll(this.settings, this.hooks.env);
     this.checkCancel(opts.token);
     const known = new Map(db.workspaces().map((w) => [w.id, w]));
     const changed: DiscoveredWorkspace[] = [];
@@ -144,7 +143,7 @@ export class Indexer {
       for (const f of ws.files) {
         const r = rows.get(f.path);
         rows.delete(f.path);
-        if (!opts.force && r && r.mtime === f.mtimeMs && r.size === f.size && r.parser_version === this.parserVersion) continue;
+        if (!opts.force && r && r.mtime === f.mtimeMs && r.size === f.size && r.parser_version === (parserFor(f)?.version ?? 0)) continue;
         const last = this.lastIndexed.get(f.path);
         if (opts.throttle && last !== undefined && now - last < THROTTLE_MS) {
           stats.deferred++;
@@ -212,7 +211,7 @@ export class Indexer {
   }
 
   private fileRow(f: DiscoveredFile, status: FileStatus, key: string | null, error: string | null = null): FileRow {
-    return { path: f.path, source: f.source, workspace_id: f.workspaceId, mtime: f.mtimeMs, size: f.size, parser_version: this.parserVersion, session_key: key, status, error };
+    return { path: f.path, source: f.source, workspace_id: f.workspaceId, mtime: f.mtimeMs, size: f.size, parser_version: parserFor(f)?.version ?? 0, session_key: key, status, error };
   }
 
   /** Writes one parse outcome; returns paths of duplicate copies that must be (re)parsed to be promoted. */
@@ -272,7 +271,7 @@ export function rebuildReason(db: IndexDb, config: IndexConfig): string | null {
   const schema = db.getMeta(META.schemaVersion);
   if (schema === undefined) return 'missing';
   if (schema !== String(SCHEMA_VERSION)) return 'schema-version';
-  if (db.getMeta(META.parserVersion) !== String(combinedParserVersion())) return 'parser-version';
+  if (db.getMeta(META.parserVersion) !== parserSignature()) return 'parser-version';
   if (db.getMeta(META.indexConfig) !== indexConfigValue(config)) return 'index-config';
   return null;
 }
@@ -296,7 +295,7 @@ export async function coldBuild(paths: IndexPaths, settings: IndexerSettings, ho
   let stats: ScanStats;
   try {
     const db = new IndexDb(store);
-    db.createSchema({ parserVersion: combinedParserVersion(), config: settings, noisePatterns: settings.noisePatterns });
+    db.createSchema({ parserVersion: parserSignature(), config: settings, noisePatterns: settings.noisePatterns });
     stats = await new Indexer(db, settings, hooks).scan({ force: true, token });
     db.optimize();
     db.setMeta(META.builtAt, String(Date.now()));

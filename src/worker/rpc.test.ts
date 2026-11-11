@@ -10,6 +10,7 @@ import type { WorkerEvent } from './protocol';
 const settings: IndexerSettings = {
   vscode: false,
   vscodeInsiders: false,
+  copilotCli: false,
   emptyWindow: true,
   additionalSessionRoots: [stableFixtureUserDir()],
   excludeWorkspaces: [],

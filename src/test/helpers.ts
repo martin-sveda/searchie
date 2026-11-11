@@ -17,6 +17,10 @@ export const MAIN_COPY_JSONL = path.join(FIXTURE_USER_DIR, 'workspaceStorage', W
 export const LEGACY_JSON = path.join(FIXTURE_USER_DIR, 'workspaceStorage', WS_FOLDER_HASH, 'chatSessions', `${LEGACY_ID}.json`);
 export const EMPTY_WINDOW_JSONL = path.join(FIXTURE_USER_DIR, 'globalStorage', 'emptyWindowChatSessions', `${EMPTY_WINDOW_ID}.jsonl`);
 
+export const CLI_ID = '44444444-4444-4444-8444-444444444444';
+export const FIXTURE_CLI_ROOT = path.join(FIXTURES, 'cli', 'session-state');
+export const CLI_EVENTS = path.join(FIXTURE_CLI_ROOT, CLI_ID, 'events.jsonl');
+
 /** Text that the fixtures place in attachment content and tool output (R4.8, R4.9). */
 export const NEVER_INDEXED = 'must never be indexed';
 
@@ -46,6 +50,14 @@ export function copyFixtureUserDir(): string {
   fs.cpSync(FIXTURE_USER_DIR, path.join(dir, 'User'), { recursive: true });
   setMtimes(path.join(dir, 'User'));
   return path.join(dir, 'User');
+}
+
+/** Copies the CLI `session-state/` fixture root into a temp dir with fixed mtimes. */
+export function copyFixtureCliRoot(): string {
+  const dir = path.join(tempDir(), 'session-state');
+  fs.cpSync(FIXTURE_CLI_ROOT, dir, { recursive: true });
+  setMtimes(dir);
+  return dir;
 }
 
 let stableCopy: string | undefined;

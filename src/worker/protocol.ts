@@ -7,6 +7,7 @@ import type { ScanStats, IndexerSettings } from './indexer';
 
 export interface ListFilter {
   workspaceId?: string;
+  folder?: string;
   sources?: string[];
   models?: string[];
   modes?: string[];

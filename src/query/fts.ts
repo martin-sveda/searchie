@@ -53,6 +53,8 @@ export interface SqlFilter {
 export interface Scope {
   sessionKey?: string;
   workspaceId?: string;
+  /** A folder group (R7.27): every workspace with this folder key. */
+  folder?: string;
 }
 
 function anyOf(column: string, values: readonly string[], params: SqlValue[]): string {
@@ -69,6 +71,10 @@ export function buildFilters(f: Filters, scope: Scope = {}): SqlFilter {
   if (scope.workspaceId) {
     out.session.push('s.workspace_id = ?');
     out.sessionParams.push(scope.workspaceId);
+  }
+  if (scope.folder !== undefined) {
+    out.session.push('s.workspace_id IN (SELECT id FROM workspaces WHERE folder = ?)');
+    out.sessionParams.push(scope.folder);
   }
   if (f.ws.length) {
     const params: SqlValue[] = [];

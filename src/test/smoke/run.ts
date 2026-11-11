@@ -20,6 +20,11 @@ async function main(): Promise<void> {
   const version = process.env.SEARCHIE_VSCODE ?? 'installed';
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'searchie-smoke-'));
   const userData = path.join(tmp, 'user-data');
+  // Index a copy with equal mtimes: git doesn't preserve them, and the duplicate fixture copies must tie (R5.19).
+  const fixtures = path.join(tmp, 'fixtures');
+  fs.cpSync(FIXTURES, fixtures, { recursive: true });
+  const fixed = new Date('2026-01-16T00:00:00Z');
+  for (const e of fs.readdirSync(fixtures, { withFileTypes: true, recursive: true })) if (e.isFile()) fs.utimesSync(path.join(e.parentPath, e.name), fixed, fixed);
   fs.mkdirSync(path.join(userData, 'User'), { recursive: true });
   fs.writeFileSync(
     path.join(userData, 'User', 'settings.json'),
@@ -27,7 +32,7 @@ async function main(): Promise<void> {
       {
         'searchie.sources.vscode': false,
         'searchie.sources.vscodeInsiders': false,
-        'searchie.additionalSessionRoots': [FIXTURES],
+        'searchie.additionalSessionRoots': [fixtures],
         'telemetry.telemetryLevel': 'off',
         'update.mode': 'none',
         'extensions.autoCheckUpdates': false,

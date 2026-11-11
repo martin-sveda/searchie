@@ -3,7 +3,7 @@ import path from 'node:path';
 import { build } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { RpcCancelledError, WorkerClient, WorkerCrashedError, type CancellationLike } from '../service/worker-client';
-import { FIXTURE_USER_DIR, MAIN_ID, tempDir } from '../test/helpers';
+import { stableFixtureUserDir, MAIN_ID, tempDir } from '../test/helpers';
 import type { IndexerSettings } from './indexer';
 import type { WorkerEvent } from './protocol';
 
@@ -11,7 +11,7 @@ const settings: IndexerSettings = {
   vscode: false,
   vscodeInsiders: false,
   emptyWindow: true,
-  additionalSessionRoots: [FIXTURE_USER_DIR],
+  additionalSessionRoots: [stableFixtureUserDir()],
   excludeWorkspaces: [],
   includeThinking: false,
   maxTurnTextKB: 64,

@@ -7,7 +7,7 @@ import { indexConfigValue, META } from '../store/schema';
 import {
   copyFixtureUserDir,
   EMPTY_WINDOW_ID,
-  FIXTURE_USER_DIR,
+  stableFixtureUserDir,
   LEGACY_ID,
   MAIN_ID,
   NEVER_INDEXED,
@@ -48,7 +48,7 @@ describe('coldBuild on the fixtures', () => {
   let db: IndexDb;
   beforeEach(async () => {
     dir = tempDir();
-    const stats = await coldBuild(indexPaths(dir), settingsFor(FIXTURE_USER_DIR));
+    const stats = await coldBuild(indexPaths(dir), settingsFor(stableFixtureUserDir()));
     // The two copies of the main session may have different mtimes (e.g. on Windows checkouts); the newer one
     // then replaces the first, so the write count is 3 or 4. The resulting index is the same.
     expect(stats).toMatchObject({ workspaces: 3, files: 4, parsed: 4, duplicates: 1, failed: 0 });
@@ -59,13 +59,13 @@ describe('coldBuild on the fixtures', () => {
 
   it('publishes a current index and removes the build file', () => {
     expect(fs.existsSync(indexPaths(dir).build)).toBe(false);
-    expect(rebuildReason(db, settingsFor(FIXTURE_USER_DIR))).toBeNull();
-    expect(rebuildReason(db, settingsFor(FIXTURE_USER_DIR, { includeThinking: true }))).toBe('index-config');
-    expect(rebuildReason(db, settingsFor(FIXTURE_USER_DIR, { maxTurnTextKB: 32 }))).toBe('index-config');
+    expect(rebuildReason(db, settingsFor(stableFixtureUserDir()))).toBeNull();
+    expect(rebuildReason(db, settingsFor(stableFixtureUserDir(), { includeThinking: true }))).toBe('index-config');
+    expect(rebuildReason(db, settingsFor(stableFixtureUserDir(), { maxTurnTextKB: 32 }))).toBe('index-config');
     db.setMeta(META.parserVersion, '0');
-    expect(rebuildReason(db, settingsFor(FIXTURE_USER_DIR))).toBe('parser-version');
+    expect(rebuildReason(db, settingsFor(stableFixtureUserDir()))).toBe('parser-version');
     db.setMeta(META.schemaVersion, '0');
-    expect(rebuildReason(db, settingsFor(FIXTURE_USER_DIR))).toBe('schema-version');
+    expect(rebuildReason(db, settingsFor(stableFixtureUserDir()))).toBe('schema-version');
     expect(db.getMeta(META.indexConfig)).toBe(indexConfigValue({ includeThinking: false, maxTurnTextKB: 64 }));
   });
 
@@ -130,7 +130,7 @@ describe('coldBuild on the fixtures', () => {
 
   it('indexes thinking into aux when enabled (R5.9a)', async () => {
     const d2 = tempDir();
-    await coldBuild(indexPaths(d2), settingsFor(FIXTURE_USER_DIR, { includeThinking: true }));
+    await coldBuild(indexPaths(d2), settingsFor(stableFixtureUserDir(), { includeThinking: true }));
     const db2 = openLive(d2);
     expect(match(db2, '{aux}: reasoning')).toEqual([{ key: MAIN_KEY, idx: 0 }]);
     db2.store.close();

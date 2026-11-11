@@ -2,7 +2,7 @@ import path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { IndexDb } from '../store/index-db';
 import { openNodeSqliteStore } from '../store/node-sqlite-store';
-import { EMPTY_WINDOW_ID, FIXTURE_USER_DIR, LEGACY_ID, MAIN_ID, placeholderRequest, tempDir, WS_FOLDER_HASH, writeJsonl } from '../test/helpers';
+import { EMPTY_WINDOW_ID, stableFixtureUserDir, LEGACY_ID, MAIN_ID, placeholderRequest, tempDir, WS_FOLDER_HASH, writeJsonl } from '../test/helpers';
 import { coldBuild, type IndexerSettings, indexPaths } from '../worker/indexer';
 import { QueryEngine, type SearchResponse } from './engine';
 import { mergeWeights, sessionScore, turnScore } from './ranking';
@@ -37,7 +37,7 @@ describe('QueryEngine on the fixtures – golden queries (expected top 3)', () =
   let engine: QueryEngine;
   const q = (query: string, extra: Partial<Parameters<QueryEngine['search']>[0]> = {}): SearchResponse => engine.search({ query, now: NOW, ...extra });
   beforeAll(async () => {
-    engine = await engineFor(FIXTURE_USER_DIR);
+    engine = await engineFor(stableFixtureUserDir());
   });
 
   it.each([

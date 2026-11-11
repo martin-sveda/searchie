@@ -31,11 +31,29 @@ export function writeJsonl(dir: string, name: string, entries: readonly unknown[
   return file;
 }
 
-/** Copies the fixture `User/` dir into a temp dir so tests can modify it. */
+/** Fixed mtime for fixture copies: git doesn't preserve mtimes, and R5.19 picks the newest duplicate copy. */
+export const FIXTURE_MTIME = new Date('2026-01-16T00:00:00Z');
+
+function setMtimes(dir: string): void {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true, recursive: true })) {
+    if (entry.isFile()) fs.utimesSync(path.join(entry.parentPath, entry.name), FIXTURE_MTIME, FIXTURE_MTIME);
+  }
+}
+
+/** Copies the fixture `User/` dir into a temp dir (equal mtimes, so the duplicate tie-break is deterministic). */
 export function copyFixtureUserDir(): string {
   const dir = tempDir();
   fs.cpSync(FIXTURE_USER_DIR, path.join(dir, 'User'), { recursive: true });
+  setMtimes(path.join(dir, 'User'));
   return path.join(dir, 'User');
+}
+
+let stableCopy: string | undefined;
+
+/** A read-only-by-convention fixture copy shared by tests that only index (never modify) the fixtures. */
+export function stableFixtureUserDir(): string {
+  stableCopy ??= copyFixtureUserDir();
+  return stableCopy;
 }
 
 export function placeholderRequest(i: number, text: string, extra: Record<string, unknown> = {}): Record<string, unknown> {

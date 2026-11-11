@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { parseVsCodeFile } from '../core/parser-vscode';
 import { isNoise } from '../core/text';
@@ -97,7 +98,7 @@ describe('preview data', () => {
     expect(red.files.map((f) => [f.label, f.exists])).toEqual([
       ['parser.ts', false],
       ['parser-utils.ts', false],
-      [MAIN_JSONL.split('/').pop(), true],
+      [path.basename(MAIN_JSONL), true],
     ]);
     expect(red.turns[0]!.files).toEqual([0, 1, 2]);
     expect(red.turns[0]!.parts.map((p) => p.kind)).toEqual(['thinking', 'tool', 'tool', 'markdown']);

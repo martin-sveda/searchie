@@ -88,7 +88,7 @@ export function resolveRoots(settings: SourceSettings, env: PlatformEnv = curren
     if (r.source === 'vscode' ? settings.vscode : settings.vscodeInsiders) add({ ...r, additional: false });
   }
   for (const dir of additionalEntries(settings, env)) {
-    if (cliRootsForEntry(dir)) continue;
+    if (cliRootsForEntry(dir, env.platform === 'win32' ? path.win32 : path.posix)) continue;
     add({ source: sourceForPath(dir), userDir: dir, additional: true });
   }
   return roots;
@@ -119,7 +119,7 @@ export function resolveCliRoots(settings: SourceSettings, env: PlatformEnv = cur
     roots.push({ dir, additional });
   };
   if (settings.copilotCli && env.home) for (const name of CLI_ROOT_NAMES) add(p.join(env.home, '.copilot', name), false);
-  for (const dir of additionalEntries(settings, env)) for (const root of cliRootsForEntry(dir) ?? []) add(root, true);
+  for (const dir of additionalEntries(settings, env)) for (const root of cliRootsForEntry(dir, p) ?? []) add(root, true);
   return roots;
 }
 

@@ -20,10 +20,10 @@ export const CLI_NO_FOLDER = 'no-folder';
 const MAX_META_BYTES = 64 * 1024;
 
 /** R3.2 – CLI root dirs for an additional-root entry, or undefined when the entry is a VS Code `User/` dir. */
-export function cliRootsForEntry(dir: string): string[] | undefined {
-  const base = path.basename(dir.replace(/[\\/]+$/, ''));
+export function cliRootsForEntry(dir: string, p: path.PlatformPath = path): string[] | undefined {
+  const base = p.basename(dir.replace(/[\\/]+$/, ''));
   if ((CLI_ROOT_NAMES as readonly string[]).includes(base)) return [dir];
-  if (base === '.copilot') return CLI_ROOT_NAMES.map((n) => path.join(dir, n));
+  if (base === '.copilot') return CLI_ROOT_NAMES.map((n) => p.join(dir, n));
   return undefined;
 }
 

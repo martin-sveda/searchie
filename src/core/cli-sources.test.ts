@@ -71,7 +71,8 @@ describe('CLI roots (R3.2, R3.6)', () => {
   it('recognises session-state, history-session-state and .copilot entries', () => {
     expect(cliRootsForEntry('/x/session-state/')).toEqual(['/x/session-state/']);
     expect(cliRootsForEntry('/x/history-session-state')).toEqual(['/x/history-session-state']);
-    expect(cliRootsForEntry('/x/.copilot')).toEqual(['/x/.copilot/session-state', '/x/.copilot/history-session-state']);
+    expect(cliRootsForEntry('/x/.copilot', path.posix)).toEqual(['/x/.copilot/session-state', '/x/.copilot/history-session-state']);
+    expect(cliRootsForEntry('C:\\u\\.copilot', path.win32)).toEqual(['C:\\u\\.copilot\\session-state', 'C:\\u\\.copilot\\history-session-state']);
     expect(cliRootsForEntry('/x/Code/User')).toBeUndefined();
   });
 

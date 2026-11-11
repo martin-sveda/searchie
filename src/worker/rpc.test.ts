@@ -58,7 +58,7 @@ describe('worker RPC (real worker_thread)', () => {
     expect(await client.call('init', { dir, settings, writer: true })).toMatchObject({ role: 'writer', hasIndex: false });
     const r = await client.call('sync', {});
     expect(r.rebuilt).toBe('missing');
-    expect(r.stats?.sessionsWritten).toBe(3);
+    expect(r.stats?.sessionsWritten).toBeGreaterThanOrEqual(3);
     expect(events.some((e) => e.event === 'changed')).toBe(true);
     expect(events.some((e) => e.event === 'parsing')).toBe(true);
     const list = await client.call('listSessions', {});

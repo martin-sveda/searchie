@@ -49,8 +49,12 @@ describe('coldBuild on the fixtures', () => {
   beforeEach(async () => {
     dir = tempDir();
     const stats = await coldBuild(indexPaths(dir), settingsFor(FIXTURE_USER_DIR));
-    expect(stats).toMatchObject({ workspaces: 3, files: 4, parsed: 4, sessionsWritten: 3, duplicates: 1, failed: 0 });
+    // The two copies of the main session may have different mtimes (e.g. on Windows checkouts); the newer one
+    // then replaces the first, so the write count is 3 or 4. The resulting index is the same.
+    expect(stats).toMatchObject({ workspaces: 3, files: 4, parsed: 4, duplicates: 1, failed: 0 });
+    expect(stats.sessionsWritten).toBeGreaterThanOrEqual(3);
     db = openLive(dir);
+    expect(db.store.get<{ n: number }>('SELECT count(*) AS n FROM sessions')?.n).toBe(3);
   });
 
   it('publishes a current index and removes the build file', () => {

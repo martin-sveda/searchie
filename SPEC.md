@@ -5,7 +5,7 @@
 | Repository | `searchie` |
 | Display name | **Searchie** |
 | Type | VS Code extension |
-| Status | Draft v0.3 – Phase 1 follow-ups from the spikes applied (dedupe, §4.2 fixes, engine consistency) |
+| Status | Draft v0.4 – Phase 2 decisions: CLI source, folder grouping, fuzzy search, Search Panel, Statistics, CSV |
 | Date | 2026-11-10 |
 
 ---
@@ -76,7 +76,7 @@ Requirements:
 |---|---|---|---|
 | `vscode` | VS Code Stable | `~/Library/Application Support/Code/User/` | `.jsonl` mutation log (and legacy `.json`) |
 | `vscode-insiders` | VS Code Insiders | `~/Library/Application Support/Code - Insiders/User/` | same |
-| `copilot-cli` | Copilot CLI | `~/.copilot/session-state/<sessionId>/` | `events.jsonl` + `workspace.yaml` |
+| `copilot-cli` | Copilot CLI | `~/.copilot/session-state/<sessionId>/` (Windows: `%USERPROFILE%\.copilot\…`) | `events.jsonl` + `workspace.yaml` |
 
 Linux / Windows equivalents follow Searchie prototype `findVsCodeDirs` (`~/.config/Code/User`, `%APPDATA%\Code\User`, …).
 
@@ -92,8 +92,9 @@ Linux / Windows equivalents follow Searchie prototype `findVsCodeDirs` (`~/.conf
 ### 3.3 Requirements
 
 - R3.1 – Each source can be enabled/disabled in settings; missing roots are silently skipped.
-- R3.2 – Additional roots (WSL, dev containers, remote homes) configurable via `searchie.additionalSessionRoots`. A root is a VS Code `User/` directory (it contains `workspaceStorage/` and/or `globalStorage/`). Its source is `vscode-insiders` when the path contains `insiders` (case-insensitive), else `vscode`. Copilot CLI roots (`session-state/`) are accepted from Phase 2 on.
-- R3.3 – Workspaces can be excluded via `searchie.excludeWorkspaces` (glob on folder path).
+- R3.2 – Additional roots (WSL, dev containers, remote homes) configurable via `searchie.additionalSessionRoots`. An entry is a **Copilot CLI root** when its basename is `session-state` or `history-session-state`, or when it is a `.copilot` directory (then its `session-state/` and `history-session-state/` are used). Otherwise it is a VS Code `User/` directory (it contains `workspaceStorage/` and/or `globalStorage/`); its source is `vscode-insiders` when the path contains `insiders` (case-insensitive), else `vscode`.
+- R3.6 – Default CLI roots: `~/.copilot/session-state/` and, if present, the legacy `~/.copilot/history-session-state/`. A session directory is indexed when it contains `events.jsonl`; lock-only directories are skipped. A session id found in both roots is deduplicated like R5.19 (newest `events.jsonl` mtime wins).
+- R3.3 – Workspaces can be excluded via `searchie.excludeWorkspaces` (glob on folder path). This applies to CLI sessions through their folder (`git_root` → `cwd`).
 - R3.4 – Source files are opened **read-only**. Searchie never writes to any source directory.
 - R3.5 – Files locked or being written (CLI `inuse.*.lock`) are read anyway; a parse failure is retried on next change, not reported as fatal.
 
@@ -148,7 +149,9 @@ Observed request fields: `requestId`, `timestamp`, `message`, `response[]`, `res
 
 ### 4.3 Copilot CLI
 
-- R4.11 – `events.jsonl` is mapped to the same model using Searchie prototype `parser-vscode-cli.ts` as reference; workspace from `workspace.yaml` (`git_root` → `cwd`, label `repository`).
+- R4.11 – `events.jsonl` is mapped to the same model (own implementation of the S3 mapping); workspace from `workspace.yaml` (`git_root` → `cwd`, label `repository`), else from `session.start.data.context` (`gitRoot` → `cwd`), updated by `session.resume.data.context`.
+- R4.15 – `workspace.yaml` is read with a minimal parser for flat top-level `key: value` pairs (plain, single-quoted and double-quoted scalars with YAML escapes); nested, multi-line and block values are ignored, and a field that can't be parsed falls back as in R4.11 / the title rule. No YAML dependency. The file is read only up to 64 KB.
+- R4.16 – The CLI parser has its own `PARSER_VERSION`; tool calls named `report_intent` are skipped (meta, S3).
 - R4.12 – ✅ Resolved by spike S3 ([spikes/S3-copilot-cli.md](spikes/S3-copilot-cli.md)), verified on CLI 1.0.95–1.0.103 and the public `github/copilot-sdk` session-events schema. Mapping:
 
 A turn starts at a **root** `user.message`, i.e. one without a top-level `agentId`. All events up to the next root `user.message` belong to that turn. Events with `agentId` come from sub-agents: they never start a turn and never contribute response text.
@@ -181,7 +184,8 @@ Ignored event types: `hook.*`, `permission.*`, `external_tool.*`, `model.*`, `su
 interface SessionMeta {
   id: string;                 // sessionId
   source: 'vscode' | 'vscode-insiders' | 'copilot-cli';
-  workspaceId: string;        // '<source>:<storage hash>', '<source>:empty-window', or CLI cwd hash
+  workspaceId: string;        // '<source>:<storage hash>', '<source>:empty-window', or 'copilot-cli:<folder hash>' (R5.21)
+  folder?: string;            // normalized folder key (R5.21); groups sessions of all sources by project
   workspaceName: string;
   workspaceUri?: string;      // folder or .code-workspace URI
   filePath: string;
@@ -258,7 +262,8 @@ interface Turn {
 ```sql
 CREATE TABLE meta      (key TEXT PRIMARY KEY, value TEXT);  -- schemaVersion, parserVersion, indexConfig, noisePatterns
 CREATE TABLE workspaces(id TEXT PRIMARY KEY, source TEXT, name TEXT, uri TEXT,
-                        fingerprint TEXT);                             -- §5.5
+                        fingerprint TEXT,                              -- §5.5
+                        folder TEXT);                                  -- R5.21 folder key, NULL for empty window
 CREATE TABLE files     (path TEXT PRIMARY KEY, source TEXT, workspace_id TEXT,
                         mtime INTEGER, size INTEGER, parser_version INTEGER,
                         session_key TEXT, status TEXT, error TEXT);  -- status: ok | empty | duplicate | failed
@@ -288,9 +293,10 @@ CREATE INDEX ix_turns_session ON turns(session_key, idx);
 CREATE INDEX ix_turn_tools   ON turn_tools(turn_id);
 CREATE INDEX ix_files_session ON files(session_key);
 CREATE INDEX ix_files_ws     ON files(workspace_id);
+CREATE INDEX ix_workspaces_folder ON workspaces(folder);
 ```
 
-Workspace ids are `<source>:<storage hash>` or `<source>:empty-window`, so Stable and Insiders never collide. The session title is stored in every turn's `title` column, so a query can combine a title term with a term from any turn.
+Workspace ids are `<source>:<storage hash>`, `<source>:empty-window` or `copilot-cli:<folder hash>`, so sources never collide; `workspaces.folder` groups them by project (R5.21). The schema version is bumped to 2 (automatic rebuild, R5.17). The session title is stored in every turn's `title` column, so a query can combine a title term with a term from any turn.
 
 ### 5.4 Text processing
 
@@ -324,8 +330,10 @@ flowchart TD
 ```
 
 - R5.20 – The workspace fingerprint includes the max file mtime and total size, because VS Code appends to the `.jsonl` of an active session, which changes neither the directory mtime nor the file count. It costs one `stat` per file and lets an unchanged workspace skip all per-file comparisons.
+- R5.21 – **Folder key** (Q3). Every workspace with a known folder gets `folder` = a normalized key: VS Code `workspace.json` `folder` URI (a `.code-workspace` URI keys the workspace file itself, so it is not merged), CLI `git_root` → `cwd`. Normalization: `file:` URIs become paths; separators become `/`; trailing `/` is removed; Windows-style paths (drive letter or UNC) are lower-cased as a whole; POSIX paths keep their case; non-`file` URIs keep `scheme://authority/path` with scheme and authority lower-cased. The CLI workspace id is `copilot-cli:` + the first 16 hex digits of SHA-256(folder key) (no path in ids or logs). Sessions without a folder (empty window, CLI without workspace info) are not merged.
+- R5.22 – **CLI change detection.** The file unit of a CLI session is its `events.jsonl`; its recorded mtime and size combine `events.jsonl` and `workspace.yaml` (max mtime, sum of sizes), so a renamed session (`name`) or a resumed session in another folder is re-indexed. Discovery reads `workspace.yaml` of each session directory to group sessions by folder (cached by mtime in the worker); the CLI workspace fingerprint follows R5.20 over its sessions. A session whose folder changed moves to the new workspace. The watcher pattern on each CLI root is `*/{events.jsonl,workspace.yaml}`; R5.15 throttling applies. `inuse.*.lock` does not affect indexing (R3.5); it only matters for opening (R8.5).
 - R5.13 – Startup: index opens immediately (UI usable with stale data), then a background scan runs.
-- R5.14 – File watching: `vscode.workspace.createFileSystemWatcher` with `RelativePattern` on each source root (`**/chatSessions/*.{jsonl,json}`, `**/events.jsonl`), debounced 2 s per file. Fallback poll every 5 min (`searchie.index.pollIntervalMinutes`).
+- R5.14 – File watching: `vscode.workspace.createFileSystemWatcher` with `RelativePattern` on each source root (`workspaceStorage/*/chatSessions/*.{jsonl,json}`, `globalStorage/emptyWindowChatSessions/*.{jsonl,json}`, CLI `*/{events.jsonl,workspace.yaml}`), debounced 2 s. Fallback poll every 5 min (`searchie.index.pollIntervalMinutes`).
 - R5.15 – Active session being written is re-indexed at most once per 10 s.
 - R5.16 – Batches of ≤ 250 sessions per transaction; progress reported to status bar (`$(sync~spin) Searchie: indexing 120/840`).
 - R5.17 – Command `Searchie: Rebuild Index` drops and rebuilds everything. A schema or parser version mismatch, or a change of `searchie.index.includeThinking` / `searchie.index.maxTurnTextKB` (stored as `indexConfig` in `meta`), triggers it automatically. A change of `searchie.noisePatterns` only re-flags `turns.noise` from the stored prompts and recomputes non-custom titles and session counts.
@@ -361,9 +369,10 @@ flowchart TD
 
 ### 6.2 Fuzzy and suggestions
 
-- R6.5 – `~term`: candidates from `turn_vocab` with same first letter and length ±2, filtered by Damerau-Levenshtein ≤ 2 (≤ 1 for terms < 5 chars), max 10 expansions, OR-ed.
-- R6.6 – If a query returns 0 results, a "Did you mean …" suggestion is computed the same way for each term.
-- R6.7 – Setting `searchie.search.autoFuzzy` (default `false`): apply fuzzy expansion automatically when results < 3.
+- R6.5 – `~term`: the term is folded like the tokenizer (lower case, diacritics removed); terms shorter than 3 characters are not expanded. Candidates come from `turn_vocab` with a first-letter **range constraint** (`term >= ? AND term < ?`, which fts5vocab evaluates without a full scan: 6.8 ms at 50 000 turns / 116 000 distinct terms vs 172 ms for a full scan, measured in P0), length ±2, filtered by Damerau-Levenshtein ≤ 2 (≤ 1 for terms < 5 chars), ranked by distance then document frequency; the term itself plus at most 10 expansions are OR-ed as quoted terms in the AST (R6.1). No materialized vocabulary table; the worker caches candidates per first letter until `data_version` changes.
+- R6.6 – If a query returns 0 results, a "Did you mean …" suggestion is computed for each positive plain term that has no document (`term = ?` lookup): the best candidate per R6.5. The suggestion is the query text with those terms replaced, offered only if it returns results. Quick Pick shows it as the first item; the Search Panel shows it above the results.
+- R6.7 – Setting `searchie.search.autoFuzzy` (default `false`): when a query returns fewer than 3 sessions, it is re-run with every plain positive term expanded (phrases and prefixes unchanged), and the UI marks the results as fuzzy.
+- R6.14 – N4 is measured with fuzzy queries included: the bench adds `~term` queries and misspelled terms (one deleted and one transposed letter of vocabulary terms at several frequency percentiles).
 
 ### 6.3 Ranking
 
@@ -415,13 +424,14 @@ Contains two views:
    ▸ This week
 ▸ likvidace (VS Code)                           48 sessions
 ▸ Empty window                                   5 sessions
-▸ ~/git/foo (Copilot CLI)                        3 sessions
+▸ foo (Copilot CLI)                               3 sessions
 ```
 
 - R7.1 – Grouping toggle: *Workspace → Date* (default), *Date → Workspace*, *Flat*.
 - R7.2 – Sort: last activity (default), created, prompts, credits.
 - R7.3 – Session item description: prompt count · primary model · mode · relative time. Tooltip (Markdown): title, workspace, source, created / last, turns, prompts, noise prompts, tool calls, top tools, tokens in/out, credits, duration, file size.
-- R7.4 – Current workspace group expanded and pinned first. The current workspace is `<current source>:<basename(dirname(context.storageUri))>`, or `<current source>:empty-window` in an empty window; the current source is `vscode-insiders` when `vscode.env.appName` contains `Insiders`, else `vscode`.
+- R7.4 – Current workspace group expanded and pinned first. The current workspace is `<current source>:<basename(dirname(context.storageUri))>`, or `<current source>:empty-window` in an empty window; the current source is `vscode-insiders` when `vscode.env.appName` contains `Insiders`, else `vscode`. The current **group** is the folder group (R7.27) that contains the current workspace.
+- R7.27 – Workspace groups are **folder groups** (R5.21): all workspaces with the same folder key form one group, whatever their source; workspaces without a folder form a group of their own. Label: the VS Code workspace name if present, else the CLI label (`repository` → folder basename), followed by the sources, e.g. `searchie (VS Code, Copilot CLI)`. *Search in this Workspace* scopes to all workspace ids of the group.
 - R7.5 – Inline actions: *Open in Chat*, *Preview*. Context menu: *Open in Chat*, *Preview*, *Open Workspace in New Window*, *Copy Session ID*, *Reveal Session File*, *Search in this Session*, *Search in this Workspace*. The two *Search in this …* actions open Quick Pick with an internal scope (session key or workspace id), shown in the Quick Pick title and removable with a title button; they add no query syntax.
 - R7.6 – View title actions: *Search*, *Open Search Panel*, *Statistics*, *Refresh*, *Filter* (source, model, mode, date range). *Filter* also offers *Group by* (R7.1) and *Sort by* (R7.2). Phase 1 ships *Search*, *Refresh* and *Filter*; *Open Search Panel* and *Statistics* come with Phase 2.
 
@@ -437,7 +447,7 @@ Contains two views:
   - detail: best snippet (plain text, matched terms not highlightable in Quick Pick → shown in `«»`)
 - R7.9 – `matchOnDescription/Detail = false` and `alwaysShow = true` (ranking comes from the index, not Quick Pick filtering). Known limit of the stable API: while text is typed, VS Code moves sessions whose *title* fuzzy-matches it to the top (label sorting can't be turned off without proposed API); the remaining order is the index ranking. Accepted, because titles carry the highest weight anyway.
 - R7.10 – Item buttons: *Preview*, *Open Workspace in New Window*. Enter = *Open* (§8).
-- R7.11 – Footer item "Open in Search Panel…" carries the current query to §7.3 (Phase 2).
+- R7.11 – A Quick Pick **title button** `$(link-external)` *Open in Search Panel* carries the current query and scope to §7.3. (A footer item would be re-sorted to the top whenever the typed text fuzzy-matches its label, R7.9.)
 - R7.12 – Pre-fill: selected text in the active editor, else last query.
 
 ### 7.3 Search Panel (webview, Preact + htm)
@@ -458,7 +468,11 @@ Layout:
 └──────────────────────────────────────────────────────────────────────┘
 ```
 
-- R7.13 – Filter controls and query text stay in sync (editing a dropdown rewrites the `ws:` token and vice versa).
+- R7.13 – Filter controls and query text stay in sync (editing a dropdown rewrites the `ws:` token and vice versa). Rules:
+  - The query is split into tokens with their raw text (§6.1 tokenizer). Valid filter tokens drive the controls; everything else (terms, phrases, operators, invalid filters such as `after:yesterday`) is **text** and kept verbatim, in order.
+  - Editing a control removes all tokens of that filter key and appends the new token(s) after the text, in the canonical order `src ws model mode tool file in after before`. Values containing whitespace are written as `key:"value"`; `"` inside values is dropped.
+  - Date tokens keep their raw value (`after:30d` stays relative). The date control offers presets (7d, 30d, 90d, 1y) and absolute `YYYY-MM-DD`.
+  - Typing in the query box re-derives the controls (debounced 150 ms). Round-trip guarantee: `parse(serialize(controls, text))` yields the same filters and the same text tokens.
 - R7.14 – Clicking a turn opens Preview scrolled to that turn.
 - R7.15 – Sort: relevance, newest, oldest, prompts, credits.
 - R7.16 – Keyboard: `↑/↓` navigate, `Enter` open, `Space` preview, `Cmd/Ctrl+Enter` new window.
@@ -477,7 +491,7 @@ Layout:
 
 ### 7.5 Statistics view (webview)
 
-See §9. Opened by `Searchie: Show Statistics` or the Summary node.
+See §9. Opened by `Searchie: Show Statistics`, the view-title action, or a click on the Summary node.
 
 ### 7.6 Status bar
 
@@ -507,7 +521,7 @@ flowchart TD
 - R8.2 – The mechanism is isolated in `ChatOpener` with feature detection (`vscode.commands.getCommands`) so it can change with VS Code releases without touching the rest.
 - R8.3 – Other-workspace sessions always show the two-button choice (*Open read-only preview* / *Open workspace in new window*). Setting `searchie.open.otherWorkspaceDefault` = `ask` (default) | `preview` | `newWindow`.
 - R8.4 – Empty-window sessions: *Open in new empty window* replaces *Open workspace*. In an empty window, empty-window sessions of the same source are same-workspace sessions (R8.1 pre-check in `emptyWindowChatSessions/`).
-- R8.5 – CLI sessions (Phase 2): *Open in Chat* via `vscode.open` on `copilotcli:/<sessionId>` when the GitHub Copilot Chat extension is active and the session has no `inuse.*.lock` file (never attach to a live CLI session); otherwise Preview. Always available: *Preview* and *Copy resume command* `copilot --resume=<sessionId>` (syntax confirmed in S3 from the public CLI reference).
+- R8.5 – CLI sessions (Phase 2): *Open in Chat* via `vscode.open` on `copilotcli:/<sessionId>` when the GitHub Copilot Chat extension (`github.copilot-chat`) is active and the session is not live; otherwise Preview. A session is **live** if its directory has an `inuse.<pid>.lock` whose process is alive (`process.kill(pid, 0)`); for sessions from additional roots (another machine) any `inuse.*.lock` counts as live. CLI sessions keep their own working directory, so they can be opened from any window (no other-workspace dialog); `searchie.open.chatLocation` applies if the move command accepts the CLI chat editor (verified manually in Phase 2). Always available: *Preview* and *Copy Resume Command* `copilot --resume=<sessionId>` (syntax confirmed in S3 from the public CLI reference).
 - R8.6 – Insiders sessions opened from Stable (or vice versa): Preview only.
 - R8.7 – Pending-open request file: `{ sessionId, workspaceUri, createdAt }`, deleted after use, ignored if older than 60 s or workspace mismatch. Every window watches the file, so a window that already has the target workspace open (VS Code focuses it instead of opening a new one) also consumes the request.
 - R8.8 – Activation: `onStartupFinished` (needed for R8.7 and background indexing) plus command / view activation events.
@@ -525,13 +539,13 @@ flowchart TD
 | Prompts | Turns with non-empty user message, not hidden |
 | Meaningful prompts | Prompts that are not noise |
 | Canceled | Turns with `modelState.value === 2` (CLI: `abort` event) |
-| Tool calls | Count of `toolInvocationSerialized` parts |
+| Tool calls | Count of `toolInvocationSerialized` parts (CLI: `tool.execution_start` events except `report_intent`) |
 | Prompt tokens / Completion tokens | Sum of `promptTokens` / `completionTokens` where present |
-| Credits | Sum of `copilotCredits` where present (shown as recorded by VS Code; no own pricing) |
-| Active days | Distinct local dates with ≥ 1 turn |
+| Credits | Sum of `copilotCredits` where present (CLI: Σ `totalNanoAiu` / 1e9 where `aiCreditsStatus = complete`); shown as recorded, no own pricing |
+| Active days | Distinct local dates with ≥ 1 turn (local time of the machine, via SQLite `'localtime'`, DST-correct) |
 | Avg prompts / session | Prompts ÷ sessions |
 | Session duration | `last turn ts + elapsedMs − first turn ts` |
-| Coverage | % of turns with token/credit data (shown next to token/credit figures) |
+| Coverage | Two values: % of turns with `promptTokens` present (token coverage) and % with credits present (credit coverage), each shown next to its figures |
 
 Missing data is shown as `—`, never as 0.
 
@@ -548,9 +562,12 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 7. **Hour-of-day × weekday heatmap** – prompt counts.
 8. **Top sessions** – by prompts, by credits, by duration.
 
-- R9.1 – All statistics computed via SQL aggregates on `sessions` / `turns` / `turn_tools` in the worker (no full session loading).
+All metrics exclude hidden turns. The filter applies at turn level (a session counts if it has ≥ 1 matching turn); *Workspace* filters by folder group (R7.27). Time buckets: day up to 60 days of range, week (ISO, Monday first) up to a year, else month, with a manual override. The heatmap uses local hour 0–23 × weekday Mon–Sun.
+
+- R9.1 – All statistics computed via SQL aggregates on `sessions` / `turns` / `turn_tools` in the worker (no full session loading) by a `StatsEngine`, in one RPC call per filter change.
 - R9.2 – Charts with Chart.js, rendered locally; theme colors from VS Code CSS variables.
-- R9.3 – *Export CSV* for each table.
+- R9.3 – *Export CSV* for each of the 8 widgets' underlying table (KPIs, activity, workspaces, models, modes, tools, heatmap, top sessions). The host re-runs the query in the worker with the current filter (data from the webview is never written) and writes only to the file chosen in `showSaveDialog` (default name `searchie-<table>-<YYYY-MM-DD>.csv`). Format: UTF-8 with BOM, CRLF, RFC 4180 quoting; numbers raw (no grouping), timestamps ISO 8601 local with offset, missing values empty. Text cells (titles, workspace, model, mode, tool names) are redacted when `searchie.redactSecrets` is on (R10.4), and a text cell starting with `=`, `+`, `-`, `@`, tab or CR gets a leading `'` (formula-injection protection).
+- R9.4 – N5 is measured end to end (command → webview reports all widgets rendered) in the smoke test, and as the `StatsEngine` query time in `npm run bench` on real data and 50 000 synthetic turns.
 
 ---
 
@@ -560,6 +577,7 @@ All widgets respect a global filter bar (date range, source, workspace, model, m
 - R10.2 – Source data read-only (R3.4). Index stored only in extension `globalStorageUri`, mode `0600`.
 - R10.3 – Command `Searchie: Delete Index` removes all Searchie data.
 - R10.4 – Secret redaction (Searchie prototype `redact-secrets.ts`) on every displayed snippet, preview and CSV export; default on (`searchie.redactSecrets`).
+- R10.12 – CSV export neutralizes spreadsheet formulas (R9.3) and is the only user-initiated file write besides the index.
 - R10.5 – Webviews: CSP nonce, no `unsafe-inline`/`unsafe-eval`, escape-then-mark snippets (R6.10), sanitized markdown (R7.24), message validation (R7.20).
 - R10.6 – SQL: all user values as bound parameters; FTS expressions generated from AST (R6.1).
 - R10.7 – Parser: prototype-pollution guard (R4.3), file size cap per line (default 64 MB) to avoid OOM, zod validation.
@@ -596,16 +614,16 @@ Settings that shape the index (`sources.*`, `additionalSessionRoots`, `excludeWo
 |---|---|---|---|
 | `searchie.sources.vscode` | boolean | `true` | Index VS Code Stable |
 | `searchie.sources.vscodeInsiders` | boolean | `true` | Index VS Code Insiders |
-| `searchie.sources.copilotCli` | boolean | `true` | Index Copilot CLI (Phase 2) |
+| `searchie.sources.copilotCli` | boolean | `true` | Index Copilot CLI |
 | `searchie.sources.emptyWindow` | boolean | `true` | Index empty-window sessions |
-| `searchie.additionalSessionRoots` | string[] | `[]` | Extra VS Code user dirs / CLI dirs |
+| `searchie.additionalSessionRoots` | string[] | `[]` | Extra VS Code `User/` dirs and CLI roots (R3.2) |
 | `searchie.excludeWorkspaces` | string[] | `[]` | Glob patterns on workspace path |
 | `searchie.index.includeThinking` | boolean | `false` | Index model thinking text |
 | `searchie.index.maxTurnTextKB` | number | `64` | Cap per indexed field per turn |
 | `searchie.index.pollIntervalMinutes` | number | `5` | Fallback poll; `0` = off |
 | `searchie.search.defaultScope` | `all` \| `currentWorkspace` | `all` | Default search scope |
 | `searchie.search.recencyBoost` | number | `0.2` | $\beta$ in §6.3 |
-| `searchie.search.autoFuzzy` | boolean | `false` | Auto fuzzy when few results (Phase 2) |
+| `searchie.search.autoFuzzy` | boolean | `false` | Auto fuzzy when fewer than 3 results (R6.7) |
 | `searchie.search.maxResults` | number | `50` | Sessions per page |
 | `searchie.open.otherWorkspaceDefault` | `ask` \| `preview` \| `newWindow` | `ask` | §8 |
 | `searchie.open.chatLocation` | `view` \| `editor` | `view` | Where *Open in Chat* shows the session (R8.1) |
@@ -618,17 +636,18 @@ Settings that shape the index (`sources.*`, `additionalSessionRoots`, `excludeWo
 | Command ID | Title | Default keybinding |
 |---|---|---|
 | `searchie.search` | Searchie: Search Sessions | `Cmd+Alt+Shift+F` / `Ctrl+Alt+Shift+F` |
-| `searchie.openSearchPanel` | Searchie: Open Search Panel (Phase 2) | – |
+| `searchie.openSearchPanel` | Searchie: Open Search Panel | – |
 | `searchie.searchInWorkspace` | Searchie: Search Sessions in Current Workspace | – |
 | `searchie.searchInSession` | Searchie: Search in this Session (tree context menu) | – |
 | `searchie.filterSessions` | Searchie: Filter Sessions… (incl. group by / sort by) | – |
-| `searchie.showStatistics` | Searchie: Show Statistics (Phase 2) | – |
+| `searchie.showStatistics` | Searchie: Show Statistics | – |
 | `searchie.openInChat` | Searchie: Open Session in Chat | – |
 | `searchie.preview` | Searchie: Preview Session | – |
 | `searchie.openWorkspaceInNewWindow` | Searchie: Open Session Workspace in New Window | – |
 | `searchie.copySessionId` | Searchie: Copy Session ID | – |
-| `searchie.copyResumeCommand` | Searchie: Copy Resume Command (CLI, Phase 2) | – |
+| `searchie.copyResumeCommand` | Searchie: Copy Resume Command (CLI sessions) | – |
 | `searchie.revealSessionFile` | Searchie: Reveal Session File | – |
+| `searchie.exportCsv` | (internal) Export a statistics table as CSV | – |
 | `searchie.refresh` | Searchie: Refresh Index | – |
 | `searchie.rebuildIndex` | Searchie: Rebuild Index | – |
 | `searchie.deleteIndex` | Searchie: Delete Index | – |
@@ -729,7 +748,7 @@ Status: implemented in 0.1.0 (see CHANGELOG.md). Measured on Apple Silicon: N1 5
 
 ### Phase 2 – Internal release
 
-Search Panel, Statistics view, Copilot CLI source, fuzzy + suggestions, CSV export. Distributed as VSIX via internal GitHub releases.
+Search Panel, Statistics view, Copilot CLI source, fuzzy + suggestions, CSV export. Distributed as a VSIX only: a CI build artifact and a local file. **No GitHub release** (owner decision): the repository is public, so a release would publish prototype-derived code before the R2.3 approval.
 
 ### Phase 3 – Public release
 
@@ -756,8 +775,8 @@ Searchie prototype code reuse approval (R2.3), README, screenshots, icon, CHANGE
 | K3 | `node:sqlite` is experimental in Node 22 (release candidate since Node 24.15); its API or availability in VS Code's runtime may change | `IndexStore` abstraction, smoke test on the minimum and current VS Code, fallbacks (R5.2) |
 | K4 | Concurrent windows writing the index | Single-writer lock (R5.3) |
 | K5 | Index contains sensitive content | Local only, `0600`, redaction on display, delete command |
-| K6 | Searchie prototype-derived code in a public repo | MIT notice + internal approval before Phase 3 |
+| K6 | Searchie prototype-derived code in a public repo | MIT notice restored (R2.1); no GitHub release until the R2.3 approval; internal approval before Phase 3 |
 | Q1 | Should the default keybinding be different? | Decide in review |
 | Q2 | Should thinking text be indexed by default? | Currently off – confirm |
-| Q3 | Group CLI sessions by repository or by cwd? | ✅ S3: group by folder, `git_root` → else `cwd`. `repository` is present in only 3/24 sessions, so it is used as the label only. This also merges CLI sessions with VS Code sessions of the same folder |
+| Q3 | Group CLI sessions by repository or by cwd? | ✅ S3: group by folder, `git_root` → else `cwd`. `repository` is present in only 3/24 sessions, so it is used as the label only. Implemented as folder groups across sources (R5.21, R7.27) |
 | Q4 | Minimum supported VS Code version | ✅ S1: **1.106** (`engines.vscode: ^1.106.0`). Runtime-verified on 1.145.2 and source-verified for 1.106; CI smoke test on 1.106 + Stable |

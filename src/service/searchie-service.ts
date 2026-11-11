@@ -382,7 +382,7 @@ export class SearchieService implements vscode.Disposable {
   async search(req: SearchRequest, token?: vscode.CancellationToken): Promise<SearchResponse> {
     await this.start();
     const ui = uiSettings();
-    return this.client.call('search', { recencyBoost: ui.recencyBoost, weights: ui.weights, redact: ui.redactSecrets, limit: ui.maxResults, ...req }, token);
+    return this.client.call('search', { recencyBoost: ui.recencyBoost, weights: ui.weights, redact: ui.redactSecrets, limit: ui.maxResults, autoFuzzy: ui.autoFuzzy, ...req }, token);
   }
 
   async loadSession(key: string): Promise<LoadedSession | null> {

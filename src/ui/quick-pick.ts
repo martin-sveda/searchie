@@ -23,7 +23,15 @@ interface ResultItem extends vscode.QuickPickItem {
 interface LoadMoreItem extends vscode.QuickPickItem {
   loadMore: true;
 }
-type Item = ResultItem | LoadMoreItem;
+interface SuggestionItem extends vscode.QuickPickItem {
+  suggestion: string;
+}
+type Item = ResultItem | LoadMoreItem | SuggestionItem;
+
+/** R6.6 – "Did you mean" is the first item; accepting it searches for the suggestion. */
+export function suggestionItem(suggestion: string): SuggestionItem {
+  return { label: `$(lightbulb) Did you mean: ${suggestion}`, alwaysShow: true, suggestion };
+}
 
 const PREVIEW_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('open-preview'), tooltip: 'Preview' };
 const NEW_WINDOW_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('empty-window'), tooltip: 'Open Workspace in New Window' };
@@ -78,7 +86,7 @@ export async function showSearchQuickPick(
 
   const render = (): void => {
     const r = current.response;
-    const items: Item[] = [...current.items];
+    const items: Item[] = r?.suggestion ? [suggestionItem(r.suggestion), ...current.items] : [...current.items];
     if (r && r.total > current.items.length) items.push({ label: `$(ellipsis) Load more (${current.items.length} of ${r.total})`, alwaysShow: true, loadMore: true });
     qp.items = items;
   };
@@ -95,7 +103,7 @@ export async function showSearchQuickPick(
       const now = Date.now();
       const items = response.results.map((r) => resultItem(r, now));
       current = offset === 0 ? { query, response, items } : { query, response, items: [...current.items, ...items] };
-      setTitle(response.warnings[0]);
+      setTitle([response.fuzzy ? 'fuzzy results' : undefined, response.warnings[0]].filter(Boolean).join(' – ') || undefined);
       render();
       if (offset > 0 && items[0]) qp.activeItems = [items[0]];
     } catch (e) {
@@ -138,6 +146,11 @@ export async function showSearchQuickPick(
       if (!item) return;
       if ('loadMore' in item) {
         void run(current.query, current.items.length);
+        return;
+      }
+      if ('suggestion' in item) {
+        qp.value = item.suggestion;
+        void run(item.suggestion, 0);
         return;
       }
       void state.update(LAST_QUERY_KEY, qp.value);

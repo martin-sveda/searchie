@@ -172,7 +172,7 @@ export class WorkerService {
 
   search(p: SearchRequest, token?: CancelToken): SearchResponse {
     if (token?.cancelled) throw new CancelledError();
-    if (!this.engine) return { results: [], total: 0, offset: 0, tookMs: 0, terms: [], warnings: [], mode: 'list' };
+    if (!this.engine) return { results: [], total: 0, offset: 0, tookMs: 0, terms: [], warnings: [], mode: 'list', fuzzy: false };
     return this.engine.search(p);
   }
 

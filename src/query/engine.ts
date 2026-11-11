@@ -2,7 +2,8 @@ import { type ListRow, SESSION_LIST_SQL, type SessionListItem, toListItem } from
 import type { IndexStore, SqlValue } from '../store/index-store';
 import type { FtsColumn } from '../store/schema';
 import { buildFilters, buildMatch, buildNegativeMatch, type Scope, type SqlFilter } from './fts';
-import { highlightTerms, parseQuery } from './parse';
+import { expandFuzzy, FuzzyVocabulary, suggestReplacements } from './fuzzy';
+import { highlightTerms, parseQuery, type QueryAst, replaceTerms } from './parse';
 import {
   DEFAULT_PAGE,
   DEFAULT_RECENCY_BOOST,
@@ -28,6 +29,10 @@ export interface SearchRequest {
   weights?: Partial<Record<string, unknown>>;
   redact?: boolean;
   now?: number;
+  /** R6.7 – re-run with every plain positive term expanded when fewer than 3 sessions match. */
+  autoFuzzy?: boolean;
+  /** R6.6 – compute "Did you mean" for 0 results (default true). */
+  suggest?: boolean;
 }
 
 export interface SearchHit {
@@ -54,7 +59,14 @@ export interface SearchResponse {
   warnings: string[];
   /** 'text' = ranked FTS; 'list' = filters only / empty query, ordered by last activity (R6.4). */
   mode: 'text' | 'list';
+  /** R6.7 – the results come from the automatic fuzzy re-run. */
+  fuzzy: boolean;
+  /** R6.6 – a corrected query that has results, offered when this one has none. */
+  suggestion?: string;
 }
+
+/** R6.7 – the automatic fuzzy re-run applies below this many matching sessions. */
+export const AUTO_FUZZY_MIN_SESSIONS = 3;
 
 /** Snippet columns in display priority; `aux` is never shown (R5.7). */
 const SNIPPET_COLUMNS: [Exclude<FtsColumn, 'aux'>, number][] = [
@@ -72,8 +84,11 @@ const where = (conds: string[]): string => (conds.length ? ` AND ${conds.join(' 
 
 export class QueryEngine {
   private mathFunctions: boolean | undefined;
+  private readonly vocab: FuzzyVocabulary;
 
-  constructor(private readonly store: IndexStore) {}
+  constructor(private readonly store: IndexStore) {
+    this.vocab = new FuzzyVocabulary(store);
+  }
 
   /** SQLite math functions (exp/ln) are compile-time options; fall back to scoring in JS without them. */
   hasMathFunctions(): boolean {
@@ -96,12 +111,40 @@ export class QueryEngine {
   search(req: SearchRequest): SearchResponse {
     const t0 = performance.now();
     const now = req.now ?? Date.now();
-    const ast = parseQuery(req.query, now);
+    const parsed = parseQuery(req.query, now);
+    let res = this.run(req, expandFuzzy(parsed, this.vocab).ast, now);
+    // The total doesn't depend on the page, so later pages take the same branch as the first one.
+    if (req.autoFuzzy && res.mode === 'text' && res.total < AUTO_FUZZY_MIN_SESSIONS) {
+      const auto = expandFuzzy(parsed, this.vocab, true);
+      if (auto.expanded) {
+        const again = this.run(req, auto.ast, now);
+        if (again.total > res.total) res = { ...again, fuzzy: true };
+      }
+    }
+    if (res.total === 0 && res.mode === 'text' && req.suggest !== false) {
+      const suggestion = this.suggest(req, parsed, now);
+      if (suggestion !== undefined) res = { ...res, suggestion };
+    }
+    return { ...res, tookMs: performance.now() - t0 };
+  }
+
+  /** R6.6 – replace plain terms without documents by their best candidate; offered only if that has results. */
+  private suggest(req: SearchRequest, parsed: QueryAst, now: number): string | undefined {
+    const replacements = suggestReplacements(parsed, this.vocab);
+    if (!replacements.size) return undefined;
+    const query = replaceTerms(req.query, replacements);
+    if (query === req.query) return undefined;
+    const check = this.run({ ...req, offset: 0, limit: 1 }, expandFuzzy(parseQuery(query, now), this.vocab).ast, now);
+    return check.total > 0 ? query : undefined;
+  }
+
+  private run(req: SearchRequest, ast: QueryAst, now: number): SearchResponse {
+    const t0 = performance.now();
     const limit = Math.max(1, Math.min(500, req.limit ?? DEFAULT_PAGE));
     const offset = Math.max(0, req.offset ?? 0);
     const filters = buildFilters(ast.filters, req.scope);
     const match = buildMatch(ast);
-    const base = { offset, terms: highlightTerms(ast), warnings: ast.warnings };
+    const base = { offset, terms: highlightTerms(ast), warnings: ast.warnings, fuzzy: false };
     if (!match) {
       const { results, total } = this.list(filters, buildNegativeMatch(ast), limit, offset);
       return { ...base, results, total, tookMs: performance.now() - t0, mode: 'list' };

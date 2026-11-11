@@ -57,6 +57,41 @@ describe('QueryEngine with the Copilot CLI fixture', () => {
   });
 });
 
+describe('fuzzy search and suggestions (R6.5–R6.7)', () => {
+  let engine: QueryEngine;
+  const q = (query: string, extra: Partial<Parameters<QueryEngine['search']>[0]> = {}): SearchResponse => engine.search({ query, now: NOW, ...extra });
+  beforeAll(async () => {
+    engine = await engineFor(stableFixtureUserDir());
+  });
+
+  it('expands ~term into the term OR its nearest vocabulary terms and highlights them', () => {
+    const r = q('~placeholdr');
+    expect(r.terms).toEqual(expect.arrayContaining(['placeholdr', 'placeholder']));
+    expect(r.fuzzy).toBe(false);
+    expect(keys(q('~clenuu'))).toEqual([MAIN]);
+    expect(q('~ab').total).toBe(q('ab').total);
+    expect(q('-~placeholdr').mode).toBe('list');
+  });
+
+  it('suggests a corrected query only for 0 results and only if it has results (R6.6)', () => {
+    expect(q('placeholdr')).toMatchObject({ total: 0, suggestion: 'placeholder' });
+    expect(q('placeholdr  src:vscode "build script"').suggestion).toBe('placeholder  src:vscode "build script"');
+    expect(q('placeholdr src:cli').suggestion).toBeUndefined();
+    expect(q('zzqqxxy').suggestion).toBeUndefined();
+    expect(q('placeholdr', { suggest: false }).suggestion).toBeUndefined();
+    expect(q('placeholder').suggestion).toBeUndefined();
+  });
+
+  it('re-runs with every plain positive term expanded below 3 sessions when autoFuzzy is on (R6.7)', () => {
+    const r = q('placeholdr', { autoFuzzy: true });
+    expect(r.fuzzy).toBe(true);
+    expect(keys(r)).toEqual([MAIN, EMPTY, LEGACY]);
+    expect(r.suggestion).toBeUndefined();
+    expect(q('placeholder', { autoFuzzy: true }).fuzzy).toBe(false);
+    expect(q('"build scrpt"', { autoFuzzy: true })).toMatchObject({ fuzzy: false, total: 0 });
+  });
+});
+
 describe('QueryEngine on the fixtures – golden queries (expected top 3)', () => {
   let engine: QueryEngine;
   const q = (query: string, extra: Partial<Parameters<QueryEngine['search']>[0]> = {}): SearchResponse => engine.search({ query, now: NOW, ...extra });
@@ -78,7 +113,7 @@ describe('QueryEngine on the fixtures – golden queries (expected top 3)', () =
     ['parser-utils', [MAIN]],
     ['run_in_terminal', [MAIN]],
     ['npm test', [MAIN]],
-    ['~placeholdr', []],
+    ['~placeholdr', [MAIN, EMPTY, LEGACY]],
   ])('%s → %j', (query, expected) => {
     expect(keys(q(query))).toEqual(expected);
   });

@@ -65,7 +65,7 @@ function indexBytes(dir: string): number {
 }
 
 /** Queries derived from the index vocabulary by document-frequency percentile (terms are never printed). */
-function buildQueries(store: IndexStore): [string, string][] {
+function buildQueries(store: IndexStore): [string, string, { autoFuzzy?: boolean }?][] {
   const vocab = store
     .all<{ term: string }>("SELECT term FROM turn_vocab WHERE length(term) BETWEEN 4 AND 20 AND term GLOB '[a-z]*' AND term NOT GLOB '*[0-9]*' ORDER BY doc DESC")
     .map((r) => r.term);
@@ -78,6 +78,12 @@ function buildQueries(store: IndexStore): [string, string][] {
   const phrase = (i: number): string => {
     const words = (prompts[i % Math.max(1, prompts.length)] ?? '').toLowerCase().split(/[^a-z]+/).filter((w) => w.length >= 3);
     return words.length >= 2 ? `"${words[0]} ${words[1]}"` : at(0.05);
+  };
+  // R6.14 – misspellings of vocabulary terms: one deleted and one transposed letter.
+  const del = (w: string): string => w.slice(0, w.length >> 1) + w.slice((w.length >> 1) + 1);
+  const swap = (w: string): string => {
+    const i = w.length >> 1;
+    return w.slice(0, i - 1) + w[i] + w[i - 1] + w.slice(i + 1);
   };
   return [
     ['single:high', at(0.001)],
@@ -104,6 +110,16 @@ function buildQueries(store: IndexStore): [string, string][] {
     ['filter:workspace', `${at(0.02)} ws:"${ws}"`],
     ['filter:tool', `${at(0.01)} tool:"${tool}"`],
     ['filter:mode+date', `${at(0.05)} mode:a after:90d`],
+    ['fuzzy', `~${at(0.005)}`],
+    ['fuzzy', `~${at(0.05)}`],
+    ['fuzzy', `~${at(0.3)}`],
+    ['fuzzy+and', `~${at(0.01)} ${at(0.03)}`],
+    ['misspelled:del', del(at(0.01))],
+    ['misspelled:del', del(at(0.2))],
+    ['misspelled:swap', swap(at(0.02))],
+    ['misspelled:swap', swap(at(0.3))],
+    ['misspelled:autoFuzzy', del(at(0.05)), { autoFuzzy: true }],
+    ['misspelled:autoFuzzy', swap(at(0.1)), { autoFuzzy: true }],
   ];
 }
 
@@ -183,14 +199,14 @@ async function run(label: string, roots: string[], outDir: string, reps: number,
   const queries = buildQueries(store);
   const all: number[] = [];
   const byType = new Map<string, { times: number[]; matched: number; n: number }>();
-  for (const [type, query] of queries) {
-    const first = await client.call('search', { query });
+  for (const [type, query, extra] of queries) {
+    const first = await client.call('search', { query, ...extra });
     const entry = byType.get(type) ?? { times: [], matched: 0, n: 0 };
     entry.matched += first.total;
     entry.n++;
     for (let i = 0; i < reps; i++) {
       const t = performance.now();
-      await client.call('search', { query });
+      await client.call('search', { query, ...extra });
       const ms = performance.now() - t;
       entry.times.push(ms);
       all.push(ms);

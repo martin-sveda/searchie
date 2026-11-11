@@ -34,6 +34,9 @@ interface Token {
   quoted: boolean;
   /** The whole token was one quoted string (a phrase). */
   fullyQuoted: boolean;
+  /** Offsets of the raw token in the input. */
+  start: number;
+  end: number;
 }
 
 const FILTER_KEYS = new Set(['ws', 'src', 'source', 'model', 'mode', 'tool', 'file', 'in', 'after', 'before']);
@@ -77,6 +80,7 @@ export function tokenize(input: string): Token[] {
   while (i < s.length) {
     while (i < s.length && /\s/.test(s[i]!)) i++;
     if (i >= s.length) break;
+    const start = i;
     let text = '';
     let quoted = false;
     let segments = 0;
@@ -97,7 +101,7 @@ export function tokenize(input: string): Token[] {
       }
       segments++;
     }
-    tokens.push({ text, quoted, fullyQuoted: quoted && segments === 1 && quotedSegments === 1 });
+    tokens.push({ text, quoted, fullyQuoted: quoted && segments === 1 && quotedSegments === 1, start, end: i });
   }
   return tokens;
 }
@@ -195,7 +199,7 @@ export function parseQuery(input: string, now = Date.now()): QueryAst {
       text = text.slice(1);
     }
     if (text.length > 1 && text.startsWith('~')) {
-      fuzzy = true; // Phase 2: fuzzy expansion (R6.5). Phase 1 treats ~term as a plain term.
+      fuzzy = true; // R6.5 – expanded by the engine (query/fuzzy.ts)
       text = text.slice(1);
     }
     const filter = /^([a-z]+):(.+)$/is.exec(text);
@@ -223,6 +227,19 @@ export function parseQuery(input: string, now = Date.now()): QueryAst {
     clauses.length = MAX_CLAUSES;
   }
   return { clauses, filters, warnings };
+}
+
+/** R6.6 – the query with unquoted plain term tokens replaced; all other text is kept verbatim. */
+export function replaceTerms(input: string, replacements: ReadonlyMap<string, string>): string {
+  let out = '';
+  let pos = 0;
+  for (const tok of tokenize(input)) {
+    const r = tok.quoted ? undefined : replacements.get(tok.text);
+    if (r === undefined) continue;
+    out += input.slice(pos, tok.start) + r;
+    pos = tok.end;
+  }
+  return out + input.slice(pos);
 }
 
 /** Lower-cased positive term texts, for highlighting in Preview (R7.23). */

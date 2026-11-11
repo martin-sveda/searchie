@@ -322,6 +322,11 @@
           "maximum": 500,
           "description": "Sessions per result page."
         },
+        "searchie.search.autoFuzzy": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "When a search finds fewer than 3 sessions, run it again with every plain word expanded to similar words (like `~word`) and mark the results as fuzzy."
+        },
         "searchie.open.otherWorkspaceDefault": {
           "type": "string",
           "enum": [

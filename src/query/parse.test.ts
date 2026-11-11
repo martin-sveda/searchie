@@ -8,15 +8,15 @@ const match = (q: string): string | null => buildMatch(parseQuery(q, NOW));
 describe('tokenize', () => {
   it('splits on whitespace and keeps quoted segments', () => {
     expect(tokenize('a  "b c"  ws:"my proj" d"e f"')).toEqual([
-      { text: 'a', quoted: false, fullyQuoted: false },
-      { text: 'b c', quoted: true, fullyQuoted: true },
-      { text: 'ws:my proj', quoted: true, fullyQuoted: false },
-      { text: 'de f', quoted: true, fullyQuoted: false },
+      { text: 'a', quoted: false, fullyQuoted: false, start: 0, end: 1 },
+      { text: 'b c', quoted: true, fullyQuoted: true, start: 3, end: 8 },
+      { text: 'ws:my proj', quoted: true, fullyQuoted: false, start: 10, end: 22 },
+      { text: 'de f', quoted: true, fullyQuoted: false, start: 23, end: 29 },
     ]);
   });
 
   it('runs an unterminated quote to the end and caps input length', () => {
-    expect(tokenize('"open session')).toEqual([{ text: 'open session', quoted: true, fullyQuoted: true }]);
+    expect(tokenize('"open session')).toEqual([{ text: 'open session', quoted: true, fullyQuoted: true, start: 0, end: 13 }]);
     expect(tokenize('x'.repeat(5000))[0]!.text).toHaveLength(2000);
     expect(tokenize('   ')).toEqual([]);
   });

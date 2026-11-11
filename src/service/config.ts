@@ -26,6 +26,7 @@ export interface UiSettings {
   defaultScope: 'all' | 'currentWorkspace';
   recencyBoost: number;
   maxResults: number;
+  autoFuzzy: boolean;
   otherWorkspaceDefault: 'ask' | 'preview' | 'newWindow';
   chatLocation: 'view' | 'editor';
   groupBy: GroupBy;
@@ -43,6 +44,7 @@ export function uiSettings(): UiSettings {
     defaultScope: pick(c.get('search.defaultScope'), ['all', 'currentWorkspace'], 'all'),
     recencyBoost: num(c.get('search.recencyBoost'), 0.2, 0, 5),
     maxResults: Math.round(num(c.get('search.maxResults'), 50, 10, 500)),
+    autoFuzzy: c.get<boolean>('search.autoFuzzy', false) === true,
     otherWorkspaceDefault: pick(c.get('open.otherWorkspaceDefault'), ['ask', 'preview', 'newWindow'], 'ask'),
     chatLocation: pick(c.get('open.chatLocation'), ['view', 'editor'], 'view'),
     groupBy: pick(c.get('tree.groupBy'), ['workspaceDate', 'dateWorkspace', 'flat'], 'workspaceDate'),

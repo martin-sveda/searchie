@@ -211,7 +211,8 @@ function summaryItem(s: IndexSummary): vscode.TreeItem {
   const item = new vscode.TreeItem(`Summary: ${parts.join(' · ')}`, vscode.TreeItemCollapsibleState.None);
   item.id = 'summary';
   item.iconPath = new vscode.ThemeIcon('graph');
-  item.tooltip = 'Sessions with at least one turn; credits as recorded by VS Code in the last 30 days.';
+  item.tooltip = 'Sessions with at least one turn; credits as recorded in the last 30 days. Click to show statistics.';
+  item.command = { command: 'searchie.showStatistics', title: 'Show Statistics' };
   return item;
 }
 

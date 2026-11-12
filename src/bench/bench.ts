@@ -9,7 +9,7 @@ import type { IndexerSettings } from '../worker/indexer';
 /**
  * `npm run bench -- --data <dir> [--synthetic 50000] [--out /tmp/searchie-dev/bench] [--reps 20]`
  * `<dir>` is a VS Code `User/` dir, a Copilot CLI root, or a dir holding `vscode/` and/or `cli/session-state/`.
- * Prints N2, N3, N4, N6, N7 (SPEC §11). Output is counts and timings only – never text, terms or paths.
+ * Prints N2, N3, N4, N5 (StatsEngine time, R9.4), N6, N7 (SPEC §11). Output is counts and timings only – never text, terms or paths.
  * Writes only below --out (default /tmp/searchie-dev/bench); delete it afterwards.
  */
 
@@ -213,6 +213,17 @@ async function run(label: string, roots: string[], outDir: string, reps: number,
     }
     byType.set(type, entry);
   }
+  // N5 (R9.4): StatsEngine time for all widgets – unfiltered and with a 30-day + source filter.
+  const statsTimes: number[] = [];
+  const statsFilters = [{}, { after: Date.now() - 30 * 86_400_000, sources: ['vscode'] }];
+  for (let i = 0; i < Math.max(3, Math.ceil(reps / 2)); i++) {
+    for (const filter of statsFilters) {
+      const t = performance.now();
+      await client.call('statistics', { filter });
+      statsTimes.push(performance.now() - t);
+    }
+  }
+  statsTimes.sort((a, b) => a - b);
   clearInterval(sampler);
   await client.dispose();
   all.sort((a, b) => a - b);
@@ -235,6 +246,7 @@ async function run(label: string, roots: string[], outDir: string, reps: number,
   console.log(`| N2 cold build | ${(buildMs / 1000).toFixed(2)} s (${per500.toFixed(2)} s per 500 MB) | ≤ 90 s / 500 MB | ${judge(per500 <= 90)} |`);
   console.log(`| N3 incremental, 1 session (${incr.turns} turns, ${incr.parsed} parsed) | ${incr.ms.toFixed(0)} ms | < 1000 ms | ${incr.ms < 1000 ? '✅' : '❌'} |`);
   console.log(`| N4 search p95 (${queries.length} queries × ${reps}) | ${pct(all, 0.95).toFixed(1)} ms (p50 ${pct(all, 0.5).toFixed(1)}, max ${(all.at(-1) ?? 0).toFixed(1)}) | < 100 ms @ 50k turns | ${pct(all, 0.95) < 100 ? '✅' : '❌'} |`);
+  console.log(`| N5 statistics, worker (${statsTimes.length} runs) | ${pct(statsTimes, 0.95).toFixed(1)} ms (p50 ${pct(statsTimes, 0.5).toFixed(1)}) | < 500 ms | ${pct(statsTimes, 0.95) < 500 ? '✅' : '❌'} |`);
   console.log(`| N6 peak RSS during cold build | ${mb(buildPeak)} MB (baseline ${mb(baseline)} MB) | < 600 MB | ${buildPeak < 600 * 1024 * 1024 ? '✅' : '❌'} |`);
   console.log(`| N7 index size | ${mb(idx)} MB = ${srcBytes ? ((idx / srcBytes) * 100).toFixed(1) : '—'} % of source | ≤ 40 % | ${judge(srcBytes > 0 && idx / srcBytes <= 0.4)} |`);
   console.log('\n| Query type | n | matched sessions (avg) | p50 ms | p95 ms |\n|---|---|---|---|---|');

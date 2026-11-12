@@ -80,6 +80,12 @@
         "icon": "$(link-external)"
       },
       {
+        "command": "searchie.showStatistics",
+        "title": "Show Statistics",
+        "category": "Searchie",
+        "icon": "$(graph)"
+      },
+      {
         "command": "searchie.searchInWorkspace",
         "title": "Search Sessions in Current Workspace",
         "category": "Searchie"
@@ -162,6 +168,11 @@
           "command": "searchie.openSearchPanel",
           "when": "view == searchie.sessions",
           "group": "navigation@2"
+        },
+        {
+          "command": "searchie.showStatistics",
+          "when": "view == searchie.sessions",
+          "group": "navigation@3"
         },
         {
           "command": "searchie.refresh",
@@ -411,6 +422,7 @@
     "package": "node -e \"require('fs').mkdirSync('dist-vsix',{recursive:true})\" && vsce package --no-dependencies --out dist-vsix/"
   },
   "dependencies": {
+    "chart.js": "4.6.1",
     "highlight.js": "11.12.0",
     "htm": "3.1.1",
     "markdown-it": "15.0.3",

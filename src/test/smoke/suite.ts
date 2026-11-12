@@ -115,6 +115,13 @@ export async function run(): Promise<void> {
   results.searchPanelTab = 'ok';
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 
+  // Statistics (§9, R9.4): N5 = command → the webview reports every widget rendered (Chart.js under the strict CSP).
+  await vscode.commands.executeCommand('searchie.showStatistics');
+  const statsMs = await waitFor(() => api.statsRenderMs(), (ms) => ms !== undefined, 15_000);
+  assert(statsMs !== undefined, 'statistics view renders');
+  results.statisticsRenderMs = Math.round(statsMs);
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
   // R8.1 – the local chat-session URI (base64url, no padding) and the feature-detected fallback command.
   const uri = localChatSessionUri(MAIN_ID);
   assert(uri.toString() === `vscode-chat-session://local/${Buffer.from(MAIN_ID).toString('base64url')}` && !uri.path.includes('='), 'chat session URI');

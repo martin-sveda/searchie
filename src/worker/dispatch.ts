@@ -18,6 +18,7 @@ export const HANDLERS = {
   summary: (s) => s.summary(),
   facets: (s) => s.facets(),
   search: (s, p: Parameters<WorkerService['search']>[0], t) => s.search(p, t),
+  statistics: (s, p: Parameters<WorkerService['statistics']>[0], t) => s.statistics(p, t),
   loadSession: (s, p: { key: string }) => s.loadSession(p),
   deleteIndex: (s) => s.deleteIndex(),
   memory: () => ({ heapUsed: process.memoryUsage().heapUsed, rss: process.memoryUsage().rss }),

@@ -5,6 +5,7 @@ import { EMPTY_WINDOW, type SourceId, workspaceKey } from '../core/ids';
 import { folderKey } from '../core/folders';
 import { resolveCliRoots, resolveRoots } from '../core/sources';
 import type { SearchRequest, SearchResponse } from '../query/engine';
+import type { StatsFilter, StatsResult } from '../query/stats';
 import type { Facets, IndexSummary, SessionListItem } from '../store/index-db';
 import type { CurrentWorkspace } from '../ui/tree-model';
 import { IndexLock, LOCK_HEARTBEAT_MS } from '../store/lock';
@@ -383,6 +384,11 @@ export class SearchieService implements vscode.Disposable {
     await this.start();
     const ui = uiSettings();
     return this.client.call('search', { recencyBoost: ui.recencyBoost, weights: ui.weights, redact: ui.redactSecrets, limit: ui.maxResults, autoFuzzy: ui.autoFuzzy, ...req }, token);
+  }
+
+  async statistics(filter: StatsFilter, token?: vscode.CancellationToken): Promise<StatsResult | null> {
+    await this.start();
+    return this.client.call('statistics', { filter }, token);
   }
 
   async loadSession(key: string): Promise<LoadedSession | null> {

@@ -277,7 +277,8 @@ CREATE TABLE sessions  (key TEXT PRIMARY KEY,                        -- '<source
                         primary_model TEXT, primary_mode TEXT);
 CREATE TABLE turns     (id INTEGER PRIMARY KEY, session_key TEXT, idx INTEGER, ts INTEGER,
                         model TEXT, mode TEXT, prompt_tokens INTEGER, completion_tokens INTEGER,
-                        credits REAL, elapsed_ms INTEGER, hidden INTEGER, canceled INTEGER, noise INTEGER);
+                        credits REAL, elapsed_ms INTEGER, hidden INTEGER, canceled INTEGER, noise INTEGER,
+                        has_prompt INTEGER);                           -- §9.1 Prompts at turn level
 CREATE TABLE turn_tools(turn_id INTEGER, tool TEXT, count INTEGER);
 CREATE TABLE turn_text (id INTEGER PRIMARY KEY, title TEXT, prompt TEXT, response TEXT,
                         tools TEXT, files TEXT, aux TEXT);           -- FTS content table

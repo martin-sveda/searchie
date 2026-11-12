@@ -7,6 +7,7 @@ import type { SessionActions } from '../service/session-actions';
 import { panelOptions } from './panel-model';
 import { currentScope, defaultScope, showSearchQuickPick } from './quick-pick';
 import { SearchPanel } from './search-panel';
+import { StatsPanel } from './stats-panel';
 import { isSessionNode, type SessionsTreeProvider, type TreeNode } from './tree';
 import { type GroupBy, SORT_LABELS, type SortBy, type TreeFilter } from './tree-model';
 import { UNTITLED } from './format';
@@ -73,6 +74,7 @@ export function registerCommands(c: CommandContext): vscode.Disposable[] {
       withSession((s) => showSearchQuickPick(service, actions, state, { query: '', scope: { label: s.title || UNTITLED, sessionKey: s.key } })),
     ),
     reg('searchie.openSearchPanel', (arg?: unknown) => SearchPanel.show(context, service, actions, panelOptions(arg))),
+    reg('searchie.showStatistics', () => StatsPanel.show(context, service, actions)),
     reg('searchie.filterSessions', () => filterSessions(c)),
     reg('searchie.openInChat', withSession((s) => actions.open(s))),
     reg('searchie.preview', withSession((s) => actions.preview(s))),

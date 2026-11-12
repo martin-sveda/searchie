@@ -1,3 +1,4 @@
+import type { StatsFilter, StatsResult } from '../query/stats';
 import type { SessionMeta, Turn } from '../core/model';
 import type { SearchRequest, SearchResponse } from '../query/engine';
 import type { Facets, IndexSummary, SessionListItem } from '../store/index-db';
@@ -6,6 +7,7 @@ import type { ScanStats, IndexerSettings } from './indexer';
 /** Typed host ↔ worker protocol. Each method maps params → result. */
 
 export interface ListFilter {
+  keys?: string[];
   workspaceId?: string;
   folder?: string;
   sources?: string[];
@@ -42,6 +44,8 @@ export interface WorkerMethods {
   summary(p: Record<string, never>): IndexSummary;
   facets(p: Record<string, never>): Facets;
   search(p: SearchRequest): SearchResponse;
+  /** R9.1 – every statistics widget for one filter. */
+  statistics(p: { filter: StatsFilter }): StatsResult | null;
   /** Re-parses the session file (read-only) with ordered parts for Preview. */
   loadSession(p: { key: string }): LoadedSession | null;
   deleteIndex(p: Record<string, never>): void;

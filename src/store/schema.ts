@@ -1,6 +1,6 @@
 /** Index schema (SPEC §5.3) and versions (R4.7, R5.17). */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS meta      (key TEXT PRIMARY KEY, value TEXT);
@@ -19,7 +19,8 @@ CREATE TABLE IF NOT EXISTS sessions  (key TEXT PRIMARY KEY,
                         primary_model TEXT, primary_mode TEXT);
 CREATE TABLE IF NOT EXISTS turns     (id INTEGER PRIMARY KEY, session_key TEXT, idx INTEGER, ts INTEGER,
                         model TEXT, mode TEXT, prompt_tokens INTEGER, completion_tokens INTEGER,
-                        credits REAL, elapsed_ms INTEGER, hidden INTEGER, canceled INTEGER, noise INTEGER);
+                        credits REAL, elapsed_ms INTEGER, hidden INTEGER, canceled INTEGER, noise INTEGER,
+                        has_prompt INTEGER);
 CREATE TABLE IF NOT EXISTS turn_tools(turn_id INTEGER, tool TEXT, count INTEGER);
 CREATE TABLE IF NOT EXISTS turn_text (id INTEGER PRIMARY KEY, title TEXT, prompt TEXT, response TEXT,
                         tools TEXT, files TEXT, aux TEXT);

@@ -1,4 +1,4 @@
-// Bundles: extension host, index worker, preview and search webviews, plus dev-only bench and smoke-test runners.
+// Bundles: extension host, index worker, preview, search and statistics webviews, plus dev-only bench and smoke-test runners.
 import * as esbuild from 'esbuild';
 import fs from 'node:fs';
 
@@ -45,6 +45,17 @@ const builds = [
     outfile: 'dist/webview/search.js',
     logLevel: 'info',
   },
+  {
+    bundle: true,
+    platform: 'browser',
+    target: 'es2022',
+    format: 'iife',
+    sourcemap: !production,
+    minify: production,
+    entryPoints: ['src/webview/stats/main.ts'],
+    outfile: 'dist/webview/stats.js',
+    logLevel: 'info',
+  },
 ];
 if (!production) {
   builds.push(
@@ -61,7 +72,9 @@ if (!production) {
 fs.rmSync('dist', { recursive: true, force: true });
 fs.mkdirSync('dist/webview', { recursive: true });
 fs.copyFileSync('src/webview/preview/preview.css', 'dist/webview/preview.css');
-fs.copyFileSync('src/webview/search/search.css', 'dist/webview/search.css');
+// Panel styles = shared base + panel rules (one stylesheet per webview, served from dist/webview only).
+const base = fs.readFileSync('src/webview/shared/base.css', 'utf8');
+for (const name of ['search', 'stats']) fs.writeFileSync(`dist/webview/${name}.css`, `${base}\n${fs.readFileSync(`src/webview/${name}/${name}.css`, 'utf8')}`);
 
 if (watch) {
   const contexts = await Promise.all(builds.map((b) => esbuild.context(b)));

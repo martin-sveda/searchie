@@ -4,6 +4,7 @@ import type { SessionActions } from './service/session-actions';
 import { registerCommands } from './ui/commands';
 import { PreviewManager } from './ui/preview-panel';
 import { SessionOpener } from './service/session-opener';
+import { StatsPanel } from './ui/stats-panel';
 import { StatusBar } from './ui/status-bar';
 import { SessionsTreeProvider, type TreeNode } from './ui/tree';
 
@@ -12,6 +13,8 @@ export interface SearchieApi {
   activationMs: number;
   service: SearchieService;
   tree: SessionsTreeProvider;
+  /** N5 – Statistics view: command → all widgets rendered (ms), once it has been opened. */
+  statsRenderMs(): number | undefined;
   /** Smoke tests replace the session actions to observe Quick Pick / tree results. */
   setActions(actions: SessionActions | undefined): void;
 }
@@ -49,6 +52,7 @@ export function activate(context: vscode.ExtensionContext): SearchieApi {
     activationMs,
     service,
     tree,
+    statsRenderMs: () => StatsPanel.lastRenderMs,
     setActions: (a) => {
       impl = a ?? defaultActions;
     },

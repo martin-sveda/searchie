@@ -5,6 +5,7 @@ import type { FilterKey } from '../../query/parse';
 import { COLUMNS, type Column, type QueryControls, setControl, splitQuery } from '../../query/query-text';
 import { relativeTime, shortModel, UNTITLED } from '../../ui/format';
 import { type PanelFacets, type PanelResult, SearchHostToWebviewSchema, type SearchWebviewToHost, SORT_VALUES } from '../search-protocol';
+import { closeDropdownsOnOutsideClick, MultiSelect } from '../shared/controls';
 
 /** Search Panel webview (§7.3). All data arrives via validated messages; Preact renders text escaped. */
 
@@ -77,36 +78,6 @@ function Snippet({ text }: { text: string }): VNode {
     rest = e < 0 ? '' : rest.slice(e + 1);
   }
   return html`<span class="snippet">${parts}</span>` as VNode;
-}
-
-interface MultiSelectProps {
-  label: string;
-  options: readonly string[];
-  selected: readonly string[];
-  display?: (v: string) => string;
-  onChange: (values: string[]) => void;
-}
-
-function MultiSelect(props: MultiSelectProps): VNode {
-  const [filter, setFilter] = useState('');
-  const display = props.display ?? ((v: string): string => v);
-  const options = [...new Set([...props.selected, ...props.options])];
-  const shown = filter ? options.filter((o) => display(o).toLowerCase().includes(filter.toLowerCase())) : options;
-  const toggle = (v: string, on: boolean): void => props.onChange(on ? [...props.selected, v] : props.selected.filter((x) => x !== v));
-  const n = props.selected.length;
-  return html`
-    <details class="dropdown">
-      <summary class=${n ? 'active' : ''}>${props.label}${n ? ` (${n})` : ''}</summary>
-      <div class="menu">
-        ${options.length > 10 ? html`<input class="menu-filter" placeholder="Filter…" aria-label=${`Filter ${props.label}`} value=${filter} onInput=${(e: Event) => setFilter((e.target as HTMLInputElement).value)} />` : ''}
-        ${shown.length === 0 ? html`<div class="meta">No values</div>` : ''}
-        ${shown.map(
-          (o) => html`<label class="option"><input type="checkbox" checked=${props.selected.includes(o)} onChange=${(e: Event) => toggle(o, (e.target as HTMLInputElement).checked)} /> ${display(o)}</label>`,
-        )}
-        ${n ? html`<button class="link" onClick=${() => props.onChange([])}>Clear</button>` : ''}
-      </div>
-    </details>
-  ` as VNode;
 }
 
 function DateSelect(props: { controls: QueryControls; onChange: (after: string | undefined, before: string | undefined) => void }): VNode {
@@ -211,22 +182,7 @@ function App(): VNode {
     return () => window.removeEventListener('message', onMessage);
   }, []);
 
-  // Dropdowns are <details>: close them on an outside click or Escape.
-  useEffect(() => {
-    const close = (keep?: EventTarget | null): void => {
-      for (const d of document.querySelectorAll('details.dropdown[open]')) if (!(keep instanceof Node && d.contains(keep))) d.removeAttribute('open');
-    };
-    const onClick = (e: MouseEvent): void => close(e.target);
-    const onKey = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') close();
-    };
-    document.addEventListener('click', onClick);
-    document.addEventListener('keydown', onKey);
-    return () => {
-      document.removeEventListener('click', onClick);
-      document.removeEventListener('keydown', onKey);
-    };
-  }, []);
+  useEffect(closeDropdownsOnOutsideClick, []);
 
   // R7.19 – the panel is not retained when hidden; query, sort and scroll position come back via setState.
   useEffect(() => {

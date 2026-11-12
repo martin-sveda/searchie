@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { QueryEngine, type SearchRequest, type SearchResponse } from '../query/engine';
+import { type StatsFilter, type StatsResult, StatsEngine } from '../query/stats';
 import { IndexDb } from '../store/index-db';
 import { openNodeSqliteStore } from '../store/node-sqlite-store';
 import { CancelledError, type CancelToken, coldBuild, Indexer, type IndexerSettings, type IndexPaths, indexPaths, rebuildReason } from './indexer';
@@ -16,6 +17,7 @@ export class WorkerService {
   private indexer?: Indexer;
   private syncing?: Promise<SyncResult>;
   private engine?: QueryEngine;
+  private stats?: StatsEngine;
 
   constructor(private readonly emit: (e: WorkerEvent) => void) {}
 
@@ -52,6 +54,7 @@ export class WorkerService {
     try {
       this.db = new IndexDb(openNodeSqliteStore(paths.live, { readOnly: !this.writer }));
       this.engine = new QueryEngine(this.db.store);
+      this.stats = new StatsEngine(this.db.store);
       if (this.writer) this.indexer = new Indexer(this.db, this.requireSettings(), this.hooks());
     } catch (e) {
       this.log('warn', `index open failed (${(e as Error).name}: ${(e as Error).message})`);
@@ -63,6 +66,7 @@ export class WorkerService {
     this.db?.store.close();
     this.db = undefined;
     this.engine = undefined;
+    this.stats = undefined;
     this.indexer = undefined;
   }
 
@@ -174,6 +178,12 @@ export class WorkerService {
     if (token?.cancelled) throw new CancelledError();
     if (!this.engine) return { results: [], total: 0, offset: 0, tookMs: 0, terms: [], warnings: [], mode: 'list', fuzzy: false };
     return this.engine.search(p);
+  }
+
+  /** R9.1 – all statistics widgets in one call; null without an index. */
+  statistics(p: { filter: StatsFilter }, token?: CancelToken): StatsResult | null {
+    if (token?.cancelled) throw new CancelledError();
+    return this.stats?.compute(p.filter) ?? null;
   }
 
   async loadSession(p: { key: string }): Promise<LoadedSession | null> {

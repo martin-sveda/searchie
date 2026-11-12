@@ -276,9 +276,23 @@ export class IndexDb {
     );
     for (const t of parsed.turns) {
       const { lastInsertRowid: id } = s.run(
-        `INSERT INTO turns(session_key, idx, ts, model, mode, prompt_tokens, completion_tokens, credits, elapsed_ms, hidden, canceled, noise)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [key, t.index, t.timestamp, t.model ?? null, t.mode ?? null, t.promptTokens ?? null, t.completionTokens ?? null, t.credits ?? null, t.elapsedMs ?? null, t.hidden ? 1 : 0, t.canceled ? 1 : 0, t.noise ? 1 : 0],
+        `INSERT INTO turns(session_key, idx, ts, model, mode, prompt_tokens, completion_tokens, credits, elapsed_ms, hidden, canceled, noise, has_prompt)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          key,
+          t.index,
+          t.timestamp,
+          t.model ?? null,
+          t.mode ?? null,
+          t.promptTokens ?? null,
+          t.completionTokens ?? null,
+          t.credits ?? null,
+          t.elapsedMs ?? null,
+          t.hidden ? 1 : 0,
+          t.canceled ? 1 : 0,
+          t.noise ? 1 : 0,
+          t.prompt.trim() !== '' ? 1 : 0,
+        ],
       );
       const toolCounts = new Map<string, number>();
       for (const c of t.toolCalls) toolCounts.set(c.tool, (toolCounts.get(c.tool) ?? 0) + 1);
@@ -340,7 +354,7 @@ export class IndexDb {
 
   // ------------------------------------------------------------ reads for the UI
 
-  listSessions(filter: { workspaceId?: string; folder?: string; sources?: readonly string[]; models?: readonly string[]; modes?: readonly string[]; after?: number; before?: number } = {}): SessionListItem[] {
+  listSessions(filter: { keys?: readonly string[]; workspaceId?: string; folder?: string; sources?: readonly string[]; models?: readonly string[]; modes?: readonly string[]; after?: number; before?: number } = {}): SessionListItem[] {
     const where: string[] = ['s.turn_count > 0'];
     const params: SqlValue[] = [];
     if (filter.workspaceId) {
@@ -356,6 +370,7 @@ export class IndexDb {
       where.push(`${col} IN (SELECT value FROM json_each(?))`);
       params.push(JSON.stringify(values));
     };
+    inList('s.key', filter.keys);
     inList('s.source', filter.sources);
     inList('s.primary_model', filter.models);
     inList('s.primary_mode', filter.modes);

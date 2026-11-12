@@ -86,6 +86,11 @@
         "icon": "$(graph)"
       },
       {
+        "command": "searchie.exportCsv",
+        "title": "Export Statistics Table as CSV",
+        "category": "Searchie"
+      },
+      {
         "command": "searchie.searchInWorkspace",
         "title": "Search Sessions in Current Workspace",
         "category": "Searchie"
@@ -240,6 +245,10 @@
       "commandPalette": [
         {
           "command": "searchie.searchInSession",
+          "when": "false"
+        },
+        {
+          "command": "searchie.exportCsv",
           "when": "false"
         }
       ]

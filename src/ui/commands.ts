@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import * as vscode from 'vscode';
 import { SOURCE_LABELS, type SourceId } from '../core/ids';
 import type { SessionListItem } from '../store/index-db';
@@ -7,6 +9,10 @@ import type { SessionActions } from '../service/session-actions';
 import { panelOptions } from './panel-model';
 import { currentScope, defaultScope, showSearchQuickPick } from './quick-pick';
 import { SearchPanel } from './search-panel';
+import { normalizeFilter } from '../query/stats';
+import { uiSettings } from '../service/config';
+import { STATS_TABLES, type StatsTable } from '../webview/stats-protocol';
+import { csvFileName, statsCsv } from './csv';
 import { StatsPanel } from './stats-panel';
 import { isSessionNode, type SessionsTreeProvider, type TreeNode } from './tree';
 import { type GroupBy, SORT_LABELS, type SortBy, type TreeFilter } from './tree-model';
@@ -75,6 +81,7 @@ export function registerCommands(c: CommandContext): vscode.Disposable[] {
     ),
     reg('searchie.openSearchPanel', (arg?: unknown) => SearchPanel.show(context, service, actions, panelOptions(arg))),
     reg('searchie.showStatistics', () => StatsPanel.show(context, service, actions)),
+    reg('searchie.exportCsv', (arg?: unknown) => exportCsv(service, arg)),
     reg('searchie.filterSessions', () => filterSessions(c)),
     reg('searchie.openInChat', withSession((s) => actions.open(s))),
     reg('searchie.preview', withSession((s) => actions.preview(s))),
@@ -116,6 +123,32 @@ export function registerCommands(c: CommandContext): vscode.Disposable[] {
     }),
     reg('searchie.showLog', () => service.log.show()),
   ];
+}
+
+/**
+ * R9.3 – re-runs the statistics with the given filter in the worker (rows from the webview are never written) and
+ * writes only the file the user picks in the save dialog.
+ */
+async function exportCsv(service: SearchieService, arg: unknown): Promise<void> {
+  const o = typeof arg === 'object' && arg !== null ? (arg as Record<string, unknown>) : {};
+  const table = (STATS_TABLES as readonly unknown[]).includes(o.table) ? (o.table as StatsTable) : undefined;
+  if (!table) return;
+  const result = await service.statistics(normalizeFilter(o.filter));
+  if (!result) {
+    void vscode.window.showWarningMessage('Searchie: the index is not ready yet. Try again when indexing has finished.');
+    return;
+  }
+  const uri = await vscode.window.showSaveDialog({
+    defaultUri: vscode.Uri.file(path.join(os.homedir(), csvFileName(table))),
+    filters: { CSV: ['csv'] },
+    saveLabel: 'Export',
+    title: 'Export statistics table as CSV',
+  });
+  if (!uri) return;
+  const { text, rows } = statsCsv(result, table, uiSettings().redactSecrets);
+  await vscode.workspace.fs.writeFile(uri, Buffer.from(text, 'utf8'));
+  service.log.info(`exported statistics table ${table} (${rows} rows)`);
+  void vscode.window.setStatusBarMessage(`Searchie: exported ${rows} rows`, 3000);
 }
 
 interface FilterPick extends vscode.QuickPickItem {

@@ -167,7 +167,7 @@ export class WorkerService {
   }
 
   facets(): ReturnType<IndexDb['facets']> {
-    return this.db?.facets() ?? { models: [], modes: [], sources: [] };
+    return this.db?.facets() ?? { models: [], modes: [], sources: [], workspaces: [] };
   }
 
   search(p: SearchRequest, token?: CancelToken): SearchResponse {

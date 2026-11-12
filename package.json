@@ -74,6 +74,12 @@
         "icon": "$(search)"
       },
       {
+        "command": "searchie.openSearchPanel",
+        "title": "Open Search Panel",
+        "category": "Searchie",
+        "icon": "$(link-external)"
+      },
+      {
         "command": "searchie.searchInWorkspace",
         "title": "Search Sessions in Current Workspace",
         "category": "Searchie"
@@ -153,14 +159,19 @@
           "group": "navigation@1"
         },
         {
-          "command": "searchie.filterSessions",
+          "command": "searchie.openSearchPanel",
           "when": "view == searchie.sessions",
           "group": "navigation@2"
         },
         {
           "command": "searchie.refresh",
           "when": "view == searchie.sessions",
-          "group": "navigation@3"
+          "group": "navigation@4"
+        },
+        {
+          "command": "searchie.filterSessions",
+          "when": "view == searchie.sessions",
+          "group": "navigation@5"
         }
       ],
       "view/item/context": [

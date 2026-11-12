@@ -20,8 +20,13 @@ import { cleanSnippet, hasMark } from './snippet';
 
 /** Query engine (§6.3, §6.4): ranked, session-grouped, paged search with redacted snippets. */
 
+/** R7.15 – result order; `relevance` is §6.3 (list mode falls back to newest). */
+export const SORTS = ['relevance', 'newest', 'oldest', 'prompts', 'credits'] as const;
+export type SearchSort = (typeof SORTS)[number];
+
 export interface SearchRequest {
   query: string;
+  sort?: SearchSort;
   limit?: number;
   offset?: number;
   scope?: Scope;
@@ -53,6 +58,8 @@ export interface SearchResult {
 export interface SearchResponse {
   results: SearchResult[];
   total: number;
+  /** Matching turns over all result sessions (text mode). */
+  totalTurns?: number;
   offset: number;
   tookMs: number;
   terms: string[];
@@ -81,6 +88,23 @@ const BM25 = 'bm25(turn_fts, ?, ?, ?, ?, ?, ?)';
 const weightParams = (w: Weights): number[] => [w.title, w.prompt, w.response, w.tools, w.files, w.aux];
 
 const where = (conds: string[]): string => (conds.length ? ` AND ${conds.join(' AND ')}` : '');
+
+/** ORDER BY over `g` (grouped matches: score) joined with `s` (sessions); `sk` / `s.key` break ties. */
+const RANK_ORDER: Record<SearchSort, string> = {
+  relevance: 'g.score DESC, g.sk',
+  newest: 's.last_at DESC, g.sk',
+  oldest: 's.last_at ASC, g.sk',
+  prompts: 's.prompt_count DESC, g.score DESC, g.sk',
+  credits: 's.credits IS NULL, s.credits DESC, g.score DESC, g.sk',
+};
+const LIST_ORDER: Record<SearchSort, string> = {
+  relevance: 'x.lastActivityAt DESC, x.key',
+  newest: 'x.lastActivityAt DESC, x.key',
+  oldest: 'x.lastActivityAt ASC, x.key',
+  prompts: 'x.promptCount DESC, x.lastActivityAt DESC, x.key',
+  credits: 'x.credits IS NULL, x.credits DESC, x.lastActivityAt DESC, x.key',
+};
+const sortOf = (s: unknown): SearchSort => ((SORTS as readonly unknown[]).includes(s) ? (s as SearchSort) : 'relevance');
 
 export class QueryEngine {
   private mathFunctions: boolean | undefined;
@@ -146,21 +170,25 @@ export class QueryEngine {
     const match = buildMatch(ast);
     const base = { offset, terms: highlightTerms(ast), warnings: ast.warnings, fuzzy: false };
     if (!match) {
-      const { results, total } = this.list(filters, buildNegativeMatch(ast), limit, offset);
+      const { results, total } = this.list(filters, buildNegativeMatch(ast), limit, offset, sortOf(req.sort));
       return { ...base, results, total, tookMs: performance.now() - t0, mode: 'list' };
     }
     const weights = mergeWeights(req.weights);
     const beta = req.recencyBoost ?? DEFAULT_RECENCY_BOOST;
+    const sort = sortOf(req.sort);
     let ranked: { sk: string; best: number; k: number; score: number }[];
     let total: number;
+    let totalTurns: number;
     try {
-      ({ ranked, total } = this.hasMathFunctions() ? this.rankSql(match, filters, weights, beta, now, limit, offset) : this.rankJs(match, filters, weights, beta, now, limit, offset));
+      ({ ranked, total, totalTurns } = this.hasMathFunctions()
+        ? this.rankSql(match, filters, weights, beta, now, limit, offset, sort)
+        : this.rankJs(match, filters, weights, beta, now, limit, offset, sort));
     } catch (e) {
       // A malformed FTS expression can only come from a bug; never surface SQL errors as results.
       return { ...base, results: [], total: 0, tookMs: performance.now() - t0, mode: 'text', warnings: [...ast.warnings, `search failed (${(e as Error).name})`] };
     }
     const results = this.hydrate(ranked, match, filters, weights, beta, now, req.redact !== false);
-    return { ...base, results, total, tookMs: performance.now() - t0, mode: 'text' };
+    return { ...base, results, total, totalTurns, tookMs: performance.now() - t0, mode: 'text' };
   }
 
   /** Score expression; bind `weightParams(weights)`, then beta and now. */
@@ -176,25 +204,45 @@ export class QueryEngine {
     };
   }
 
-  private rankSql(match: string, filters: SqlFilter, weights: Weights, beta: number, now: number, limit: number, offset: number): { ranked: { sk: string; best: number; k: number; score: number }[]; total: number } {
+  private rankSql(
+    match: string,
+    filters: SqlFilter,
+    weights: Weights,
+    beta: number,
+    now: number,
+    limit: number,
+    offset: number,
+    sort: SearchSort,
+  ): { ranked: { sk: string; best: number; k: number; score: number }[]; total: number; totalTurns: number } {
     const from = this.matchFrom(filters);
     // FTS5 refuses bm25() inside aggregates, so scores are materialized first (spike S2).
-    const rows = this.store.all<{ sk: string; best: number; k: number; score: number; total: number }>(
-      `WITH m AS MATERIALIZED (SELECT t.session_key AS sk, ${this.scoreSql()} AS sc ${from.sql})
-       SELECT sk, max(sc) AS best, count(*) AS k, max(sc) + 0.25 * ln(count(*)) AS score, count(*) OVER () AS total
-       FROM m GROUP BY sk ORDER BY score DESC, sk LIMIT ? OFFSET ?`,
+    const rows = this.store.all<{ sk: string; best: number; k: number; score: number; total: number; turns: number }>(
+      `WITH m AS MATERIALIZED (SELECT t.session_key AS sk, ${this.scoreSql()} AS sc ${from.sql}),
+       g AS (SELECT sk, max(sc) AS best, count(*) AS k, max(sc) + 0.25 * ln(count(*)) AS score FROM m GROUP BY sk)
+       SELECT g.sk, g.best, g.k, g.score, count(*) OVER () AS total, sum(g.k) OVER () AS turns
+       FROM g JOIN sessions s ON s.key = g.sk ORDER BY ${RANK_ORDER[sort]} LIMIT ? OFFSET ?`,
       [...weightParams(weights), beta, now, match, ...from.params, limit, offset],
     );
-    const total = rows[0]?.total ?? (offset > 0 ? this.countSessions(match, filters) : 0);
-    return { ranked: rows, total };
+    const counts = rows[0] ? { total: rows[0].total, turns: rows[0].turns } : offset > 0 ? this.countMatches(match, filters) : { total: 0, turns: 0 };
+    return { ranked: rows, total: counts.total, totalTurns: counts.turns };
   }
 
-  private countSessions(match: string, filters: SqlFilter): number {
+  private countMatches(match: string, filters: SqlFilter): { total: number; turns: number } {
     const from = this.matchFrom(filters);
-    return this.store.get<{ n: number }>(`SELECT count(DISTINCT t.session_key) AS n ${from.sql}`, [match, ...from.params])?.n ?? 0;
+    const r = this.store.get<{ n: number; k: number }>(`SELECT count(DISTINCT t.session_key) AS n, count(*) AS k ${from.sql}`, [match, ...from.params]);
+    return { total: r?.n ?? 0, turns: r?.k ?? 0 };
   }
 
-  private rankJs(match: string, filters: SqlFilter, weights: Weights, beta: number, now: number, limit: number, offset: number): { ranked: { sk: string; best: number; k: number; score: number }[]; total: number } {
+  private rankJs(
+    match: string,
+    filters: SqlFilter,
+    weights: Weights,
+    beta: number,
+    now: number,
+    limit: number,
+    offset: number,
+    sort: SearchSort,
+  ): { ranked: { sk: string; best: number; k: number; score: number }[]; total: number; totalTurns: number } {
     const from = this.matchFrom(filters);
     const rows = this.store.all<{ sk: string; b: number; ts: number; noise: number }>(
       `SELECT t.session_key AS sk, ${BM25} AS b, t.ts, t.noise ${from.sql}`,
@@ -211,8 +259,28 @@ export class QueryEngine {
       }
     }
     const all = [...agg].map(([sk, a]) => ({ sk, best: a.best, k: a.k, score: sessionScore(a.best, a.k) }));
-    all.sort((a, b) => b.score - a.score || (a.sk < b.sk ? -1 : 1));
-    return { ranked: all.slice(offset, offset + limit), total: all.length };
+    const byKey = (a: { sk: string }, b: { sk: string }): number => (a.sk < b.sk ? -1 : 1);
+    if (sort === 'relevance') all.sort((a, b) => b.score - a.score || byKey(a, b));
+    else {
+      const meta = new Map(
+        this.store
+          .all<{ key: string; last: number; prompts: number; credits: number | null }>(
+            'SELECT key, last_at AS last, prompt_count AS prompts, credits FROM sessions WHERE key IN (SELECT value FROM json_each(?))',
+            [JSON.stringify(all.map((a) => a.sk))],
+          )
+          .map((r) => [r.key, r]),
+      );
+      const m = (sk: string): { last: number; prompts: number; credits: number | null } => meta.get(sk) ?? { last: 0, prompts: 0, credits: null };
+      all.sort((a, b) => {
+        const x = m(a.sk);
+        const y = m(b.sk);
+        if (sort === 'newest') return y.last - x.last || byKey(a, b);
+        if (sort === 'oldest') return x.last - y.last || byKey(a, b);
+        if (sort === 'prompts') return y.prompts - x.prompts || b.score - a.score || byKey(a, b);
+        return (x.credits === null ? 1 : 0) - (y.credits === null ? 1 : 0) || (y.credits ?? 0) - (x.credits ?? 0) || b.score - a.score || byKey(a, b);
+      });
+    }
+    return { ranked: all.slice(offset, offset + limit), total: all.length, totalTurns: rows.length };
   }
 
   private hydrate(
@@ -272,7 +340,7 @@ export class QueryEngine {
   }
 
   /** R6.4 – filters only (or empty / negative-only query): sessions by last activity. */
-  private list(filters: SqlFilter, negative: string | null, limit: number, offset: number): { results: SearchResult[]; total: number } {
+  private list(filters: SqlFilter, negative: string | null, limit: number, offset: number, sort: SearchSort): { results: SearchResult[]; total: number } {
     const conds = ['s.turn_count > 0', ...filters.session];
     const params: SqlValue[] = [...filters.sessionParams];
     if (filters.turn.length) {
@@ -284,7 +352,7 @@ export class QueryEngine {
       params.push(negative);
     }
     const rows = this.store.all<ListRow & { total: number }>(
-      `SELECT x.*, count(*) OVER () AS total FROM (${SESSION_LIST_SQL} WHERE ${conds.join(' AND ')}) x ORDER BY x.lastActivityAt DESC, x.key LIMIT ? OFFSET ?`,
+      `SELECT x.*, count(*) OVER () AS total FROM (${SESSION_LIST_SQL} WHERE ${conds.join(' AND ')}) x ORDER BY ${LIST_ORDER[sort]} LIMIT ? OFFSET ?`,
       [...params, limit, offset],
     );
     return { results: rows.map((r) => ({ session: toListItem(r), score: 0, matchCount: 0, hits: [] })), total: rows[0]?.total ?? 0 };

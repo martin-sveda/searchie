@@ -98,6 +98,14 @@ export const SESSION_LIST_SQL = `SELECT s.key, s.id, s.source, s.workspace_id AS
   s.prompt_count AS promptCount, s.credits, s.primary_model AS primaryModel, s.primary_mode AS primaryMode
   FROM sessions s LEFT JOIN workspaces w ON w.id = s.workspace_id`;
 
+export interface Facets {
+  models: string[];
+  modes: string[];
+  sources: string[];
+  /** Workspace names, for the Search Panel's `ws:` control (R7.13). */
+  workspaces: string[];
+}
+
 export type ListRow = Omit<SessionListItem, 'workspaceUri' | 'folder' | 'credits' | 'primaryModel' | 'primaryMode'> & {
   workspaceUri: string | null;
   folder: string | null;
@@ -362,10 +370,13 @@ export class IndexDb {
     return this.store.all<ListRow>(`${SESSION_LIST_SQL} WHERE ${where.join(' AND ')} ORDER BY s.last_at DESC`, params).map(toListItem);
   }
 
-  facets(): { models: string[]; modes: string[]; sources: string[] } {
+  facets(): Facets {
     const col = (c: string): string[] =>
       this.store.all<{ v: string }>(`SELECT DISTINCT ${c} AS v FROM sessions WHERE ${c} IS NOT NULL AND turn_count > 0 ORDER BY v`).map((r) => r.v);
-    return { models: col('primary_model'), modes: col('primary_mode'), sources: col('source') };
+    const workspaces = this.store
+      .all<{ v: string }>('SELECT DISTINCT w.name AS v FROM sessions s JOIN workspaces w ON w.id = s.workspace_id WHERE s.turn_count > 0 ORDER BY v COLLATE NOCASE')
+      .map((r) => r.v);
+    return { models: col('primary_model'), modes: col('primary_mode'), sources: col('source'), workspaces };
   }
 
   sessionMeta(key: string): SessionMeta | undefined {

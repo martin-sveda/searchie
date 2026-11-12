@@ -5,7 +5,7 @@ import { EMPTY_WINDOW, type SourceId, workspaceKey } from '../core/ids';
 import { folderKey } from '../core/folders';
 import { resolveCliRoots, resolveRoots } from '../core/sources';
 import type { SearchRequest, SearchResponse } from '../query/engine';
-import type { IndexSummary, SessionListItem } from '../store/index-db';
+import type { Facets, IndexSummary, SessionListItem } from '../store/index-db';
 import type { CurrentWorkspace } from '../ui/tree-model';
 import { IndexLock, LOCK_HEARTBEAT_MS } from '../store/lock';
 import type { SessionMeta } from '../core/model';
@@ -374,7 +374,7 @@ export class SearchieService implements vscode.Disposable {
     return this.client.call('summary', {});
   }
 
-  async facets(): Promise<{ models: string[]; modes: string[]; sources: string[] }> {
+  async facets(): Promise<Facets> {
     await this.start();
     return this.client.call('facets', {});
   }

@@ -1,6 +1,6 @@
 import type { SessionMeta, Turn } from '../core/model';
 import type { SearchRequest, SearchResponse } from '../query/engine';
-import type { IndexSummary, SessionListItem } from '../store/index-db';
+import type { Facets, IndexSummary, SessionListItem } from '../store/index-db';
 import type { ScanStats, IndexerSettings } from './indexer';
 
 /** Typed host ↔ worker protocol. Each method maps params → result. */
@@ -40,7 +40,7 @@ export interface WorkerMethods {
   listSessions(p: ListFilter): SessionListItem[];
   sessionMeta(p: { key: string }): SessionMeta | null;
   summary(p: Record<string, never>): IndexSummary;
-  facets(p: Record<string, never>): { models: string[]; modes: string[]; sources: string[] };
+  facets(p: Record<string, never>): Facets;
   search(p: SearchRequest): SearchResponse;
   /** Re-parses the session file (read-only) with ordered parts for Preview. */
   loadSession(p: { key: string }): LoadedSession | null;

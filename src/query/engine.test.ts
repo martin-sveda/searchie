@@ -199,6 +199,28 @@ describe('QueryEngine on the fixtures – golden queries (expected top 3)', () =
     expect(engine.hasMathFunctions()).toBe(true);
   });
 
+  it.each(['relevance', 'newest', 'oldest', 'prompts', 'credits'] as const)('sorts by %s the same way in SQL and JS (R7.15)', (sort) => {
+    const sql = q('placeholder', { sort });
+    engine.setMathFunctions(false);
+    const js = q('placeholder', { sort });
+    const paged = q('placeholder', { sort, limit: 1, offset: 1 });
+    engine.setMathFunctions(true);
+    expect(keys(js)).toEqual(keys(sql));
+    expect(js.totalTurns).toBe(sql.totalTurns);
+    expect(keys(paged)).toEqual([keys(sql)[1]]);
+    const order = { relevance: [MAIN, EMPTY, LEGACY], newest: [EMPTY, MAIN, LEGACY], oldest: [LEGACY, MAIN, EMPTY], prompts: [MAIN, EMPTY, LEGACY], credits: [MAIN, EMPTY, LEGACY] }[sort];
+    expect(keys(sql)).toEqual(order);
+  });
+
+  it('counts matching turns and sorts list mode (R6.4, R7.15)', () => {
+    const r = q('placeholder');
+    expect(r.totalTurns).toBe(r.results.reduce((n, x) => n + x.matchCount, 0));
+    expect(q('placeholder', { limit: 1, offset: 2 }).totalTurns).toBe(r.totalTurns);
+    expect(keys(q('src:vscode', { sort: 'oldest' }))).toEqual([LEGACY, MAIN, EMPTY]);
+    expect(keys(q('src:vscode', { sort: 'bogus' as never }))).toEqual(keys(q('src:vscode')));
+    expect(q('src:vscode').totalTurns).toBeUndefined();
+  });
+
   it.each(['"', '*', 'NEAR(a b)', 'a) OR (b', '{prompt}: x', "'; DROP TABLE sessions; --", 'AND', 'NOT OR', '-', '^x', 'col:val:"x'])('never fails on %j', (query) => {
     const r = q(query);
     expect(r.warnings.filter((w) => w.startsWith('search failed'))).toEqual([]);

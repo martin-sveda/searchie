@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { SessionListItem } from '../store/index-db';
 import { escapeMarkdown, formatBytes, formatCount, formatDateTime, formatDuration, plural, relativeTime, shortModel } from './format';
+import { SearchHostToWebviewSchema, SearchWebviewToHostSchema } from '../webview/search-protocol';
+import { HISTORY_MAX, panelOptions, pushHistory, toPanelResults } from './panel-model';
 import { compareSessions, dateBucket, filterSummary, groupByDate, groupByWorkspace, workspaceLabel } from './tree-model';
 
 const NOW = new Date(2026, 10, 10, 15, 0, 0).getTime();
@@ -122,5 +124,51 @@ describe('tree model', () => {
   it('summarizes filters', () => {
     expect(filterSummary({})).toBeUndefined();
     expect(filterSummary({ sources: ['vscode-insiders'], models: ['m'], modes: ['Agent'], days: 30 })).toBe('Insiders · m · Agent · last 30 days');
+  });
+});
+
+describe('Search Panel helpers (R7.11, R7.17, R7.20)', () => {
+  it('keeps the last 20 unique queries, newest first', () => {
+    let h: string[] = [];
+    for (let i = 0; i < 25; i++) h = pushHistory(h, `q${i}`);
+    h = pushHistory(h, 'q20');
+    h = pushHistory(h, '   ');
+    expect(h).toHaveLength(HISTORY_MAX);
+    expect(h.slice(0, 3)).toEqual(['q20', 'q24', 'q23']);
+    expect(h.filter((x) => x === 'q20')).toHaveLength(1);
+  });
+
+  it('validates openSearchPanel arguments from any caller', () => {
+    expect(panelOptions(undefined)).toEqual({});
+    expect(panelOptions({ query: 7, scope: { label: 'x' } })).toEqual({ query: undefined, scope: undefined });
+    expect(panelOptions({ query: 'a'.repeat(3000), scope: { label: 'ws', folder: '/a', extra: 1 } })).toEqual({
+      query: 'a'.repeat(2000),
+      scope: { label: 'ws', folder: '/a', sessionKey: undefined, workspaceId: undefined },
+    });
+  });
+
+  it('maps results to the panel DTO and both message directions validate (R7.20)', () => {
+    const session = s('k', 'vscode:w', NOW, { title: 'T', credits: 2, primaryModel: 'm' });
+    const msg = toPanelResults(3, {
+      results: [{ session, score: 1, matchCount: 2, hits: [{ turnIndex: 1, timestamp: NOW, column: 'prompt', snippet: 'a \u0001b\u0002', score: 1 }] }],
+      total: 1,
+      totalTurns: 2,
+      offset: 0,
+      tookMs: 4,
+      terms: ['b'],
+      warnings: [],
+      mode: 'text',
+      fuzzy: false,
+    });
+    expect(SearchHostToWebviewSchema.safeParse(msg).success).toBe(true);
+    expect(JSON.stringify(msg)).not.toContain('workspaceUri');
+    expect(msg.results[0]).toMatchObject({ key: 'k', title: 'T', matchCount: 2, hits: [{ turnIndex: 1, column: 'prompt', snippet: 'a \u0001b\u0002' }] });
+    for (const ok of [{ type: 'ready' }, { type: 'search', requestId: 1, query: 'x', sort: 'newest', offset: 0 }, { type: 'action', key: 'k', action: 'preview', turnIndex: 2 }, { type: 'commit', query: 'x' }, { type: 'clearScope' }]) {
+      expect(SearchWebviewToHostSchema.safeParse(ok).success).toBe(true);
+    }
+    for (const bad of [{ type: 'search', requestId: -1, query: 'x', sort: 'newest', offset: 0 }, { type: 'search', requestId: 1, query: 'x', sort: 'DROP', offset: 0 }, { type: 'action', key: 'k', action: 'delete' }, { type: 'eval' }, null]) {
+      expect(SearchWebviewToHostSchema.safeParse(bad).success).toBe(false);
+    }
+    expect(SearchHostToWebviewSchema.safeParse({ ...msg, results: [{ key: 1 }] }).success).toBe(false);
   });
 });

@@ -104,6 +104,17 @@ export async function run(): Promise<void> {
   results.previewTab = tab ? 'ok' : 'missing';
   await vscode.commands.executeCommand('workbench.action.closeAllEditors');
 
+  // Search Panel (§7.3): a webview tab, opened with a query as the Quick Pick title button does (R7.11).
+  await vscode.commands.executeCommand('searchie.openSearchPanel', { query: 'parser src:cli' });
+  const panelTab = await waitFor(
+    () => vscode.window.tabGroups.all.flatMap((g) => g.tabs).find((t) => t.input instanceof vscode.TabInputWebview && t.input.viewType.includes('searchie.searchPanel')),
+    (t) => t !== undefined,
+    10_000,
+  );
+  assert(panelTab, 'search panel tab opens');
+  results.searchPanelTab = 'ok';
+  await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+
   // R8.1 – the local chat-session URI (base64url, no padding) and the feature-detected fallback command.
   const uri = localChatSessionUri(MAIN_ID);
   assert(uri.toString() === `vscode-chat-session://local/${Buffer.from(MAIN_ID).toString('base64url')}` && !uri.path.includes('='), 'chat session URI');

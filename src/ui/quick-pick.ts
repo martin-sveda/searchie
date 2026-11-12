@@ -37,6 +37,8 @@ const PREVIEW_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon
 const NEW_WINDOW_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('empty-window'), tooltip: 'Open Workspace in New Window' };
 const COPY_RESUME_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('terminal'), tooltip: 'Copy Resume Command' };
 const CLEAR_SCOPE_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('close'), tooltip: 'Search all sessions' };
+/** R7.11 – a title button (a footer item would be re-sorted by Quick Pick's label matching, R7.9). */
+const OPEN_PANEL_BUTTON: vscode.QuickInputButton = { iconPath: new vscode.ThemeIcon('link-external'), tooltip: 'Open in Search Panel' };
 
 export function resultItem(r: SearchResult, now = Date.now()): ResultItem {
   const s = r.session;
@@ -75,7 +77,7 @@ export async function showSearchQuickPick(
   let scope = options.scope;
   const setTitle = (warn?: string): void => {
     qp.title = `Searchie${scope ? ` – ${scope.label}` : ''}${warn ? ` – ${warn}` : ''}`;
-    qp.buttons = scope ? [CLEAR_SCOPE_BUTTON] : [];
+    qp.buttons = scope ? [OPEN_PANEL_BUTTON, CLEAR_SCOPE_BUTTON] : [OPEN_PANEL_BUTTON];
   };
   setTitle();
   qp.value = options.query ?? initialQuery(state);
@@ -124,7 +126,11 @@ export async function showSearchQuickPick(
   const done = new Promise<void>((resolve) => {
     qp.onDidChangeValue(schedule);
     qp.onDidTriggerButton((b) => {
-      if (b === CLEAR_SCOPE_BUTTON) {
+      if (b === OPEN_PANEL_BUTTON) {
+        const args = { query: qp.value, scope };
+        qp.hide();
+        void vscode.commands.executeCommand('searchie.openSearchPanel', args);
+      } else if (b === CLEAR_SCOPE_BUTTON) {
         scope = undefined;
         setTitle();
         void run(qp.value, 0);

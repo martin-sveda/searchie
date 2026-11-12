@@ -29,7 +29,7 @@ export interface QueryAst {
   warnings: string[];
 }
 
-interface Token {
+export interface Token {
   text: string;
   quoted: boolean;
   /** The whole token was one quoted string (a phrase). */
@@ -169,6 +169,19 @@ function applyFilter(key: string, value: string, f: Filters, now: number, warnin
     default:
       return false;
   }
+}
+
+export type FilterKey = 'src' | 'ws' | 'model' | 'mode' | 'tool' | 'file' | 'in' | 'after' | 'before';
+
+/** R7.13 – the valid filter a raw token stands for (`source:` is `src:`), or undefined when it is text. */
+export function filterOf(tok: Token, now = Date.now()): { key: FilterKey; filters: Filters } | undefined {
+  if (tok.fullyQuoted) return undefined;
+  const m = /^([a-z]+):(.+)$/is.exec(tok.text);
+  if (!m || !FILTER_KEYS.has(m[1]!.toLowerCase())) return undefined;
+  const raw = m[1]!.toLowerCase();
+  const filters = emptyFilters();
+  if (!applyFilter(raw, m[2]!.trim(), filters, now, [])) return undefined;
+  return { key: (raw === 'source' ? 'src' : raw) as FilterKey, filters };
 }
 
 function toTerm(tok: Token, text: string, fuzzy: boolean): Term | undefined {

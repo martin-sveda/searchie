@@ -125,7 +125,7 @@ describe('coldBuild on the fixtures', () => {
     expect(db.listSessions({ sources: ['vscode-insiders'] })).toHaveLength(0);
     expect(db.listSessions({ models: ['copilot/gpt-6.1-sol'] }).map((s) => s.key)).toEqual([LEGACY_KEY]);
     expect(db.listSessions({ modes: ['Agent'], after: 1_768_400_000_000, before: 1_768_470_000_000 }).map((s) => s.key)).toEqual([MAIN_KEY]);
-    expect(db.facets()).toEqual({ models: ['copilot/claude-sonnet-5.5', 'copilot/gpt-6.1-sol'], modes: ['Agent'], sources: ['vscode'] });
+    expect(db.facets()).toEqual({ models: ['copilot/claude-sonnet-5.5', 'copilot/gpt-6.1-sol'], modes: ['Agent'], sources: ['vscode'], workspaces: ['Empty window', 'sample-app'] });
     const sum = db.summary(1_768_500_000_000);
     expect(sum).toMatchObject({ sessions: 3, prompts: 4, workspaces: 2, failedFiles: 0 });
     expect(sum.credits30d).toBe(1);

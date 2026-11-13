@@ -27,6 +27,14 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm run package
+      # Phase 2 distribution: the VSIX as a CI artifact only, no GitHub release (SPEC §14).
+      - if: matrix.os == 'ubuntu-latest'
+        uses: actions/upload-artifact@v5
+        with:
+          name: searchie-vsix
+          path: dist-vsix/*.vsix
+          if-no-files-found: error
+          retention-days: 30
 
   smoke:
     needs: build

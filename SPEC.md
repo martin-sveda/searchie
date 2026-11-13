@@ -5,7 +5,7 @@
 | Repository | `searchie` |
 | Display name | **Searchie** |
 | Type | VS Code extension |
-| Status | Draft v0.4 – Phase 2 decisions: CLI source, folder grouping, fuzzy search, Search Panel, Statistics, CSV |
+| Status | Draft v0.4 – Phase 2 decisions: CLI source, folder grouping, fuzzy search, Search Panel, Statistics, CSV; Phase 2 implemented in 0.2.0 |
 | Date | 2026-11-10 |
 
 ---
@@ -750,6 +750,8 @@ Status: implemented in 0.1.0 (see CHANGELOG.md). Measured on Apple Silicon: N1 5
 ### Phase 2 – Internal release
 
 Search Panel, Statistics view, Copilot CLI source, fuzzy + suggestions, CSV export. Distributed as a VSIX only: a CI build artifact and a local file. **No GitHub release** (owner decision): the repository is public, so a release would publish prototype-derived code before the R2.3 approval.
+
+Status: implemented in 0.2.0 (see CHANGELOG.md); the CI job `build (ubuntu-latest)` uploads the VSIX as the artifact `searchie-vsix`. Measured on Apple Silicon with 544 MB of real sessions (118 VS Code + 29 Copilot CLI) and 50 000 synthetic turns: N1 5–6 ms activation; N2 1.2 s cold build (real), 16.4 s (synthetic); N3 222 ms; N4 p95 15 ms (real) / 46 ms (50 000 turns) with fuzzy and misspelled queries included; N5 137–218 ms end to end on the fixtures and 207 ms p95 StatsEngine time at 50 000 turns; N6 321 MB peak RSS; N7 2.8 % of source; N8 Searchie's own host work ≤ 12 ms per task. Smoke-tested on VS Code 1.106.0, stable and 1.146.0. Not verified by the owner: *Open in Chat* for idle and live Copilot CLI sessions (R8.5) and whether the CLI chat editor moves into the Chat view.
 
 ### Phase 3 – Public release
 

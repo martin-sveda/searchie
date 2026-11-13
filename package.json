@@ -2,7 +2,7 @@
   "name": "searchie",
   "displayName": "Searchie",
   "description": "Full-text search across your local GitHub Copilot chat sessions. Read-only, local only, zero telemetry.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "searchie",
   "license": "MIT",
   "private": true,
